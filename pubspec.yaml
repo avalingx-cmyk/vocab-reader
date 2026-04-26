@@ -1,0 +1,54 @@
+name: vocab_reader
+description: A vocabulary learning app with AI-powered summaries
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  
+  # State management
+  flutter_riverpod: ^2.4.9
+  riverpod_annotation: ^2.3.0
+  
+  # Database
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  
+  # Storage
+  shared_preferences: ^2.2.2
+  
+  # Networking
+  dio: ^5.4.0
+  
+  # Environment variables
+  flutter_dotenv: ^5.1.0
+  
+  # UI
+  google_fonts: ^6.1.0
+  shimmer: ^3.0.0
+  
+  # Utils
+  uuid: ^4.3.3
+  intl: ^0.19.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  riverpod_generator: ^2.3.9
+  build_runner: ^2.4.7
+  custom_lint: ^0.5.7
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - .env
+    - assets/images/
