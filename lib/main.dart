@@ -3,13 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'services/database_service.dart';
+import 'services/sync_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialize database
   await DatabaseService().init();
-  
+
   runApp(const ProviderScope(child: VocabReaderApp()));
 }
 
@@ -55,8 +56,9 @@ class _AppStartupState extends ConsumerState<AppStartup> {
   }
 
   Future<void> _checkFirstLaunch() async {
-    // TODO: Check if user has completed onboarding
+    final onboardingComplete = await DatabaseService.instance.getSetting('onboarding_complete');
     setState(() {
+      _isFirstLaunch = onboardingComplete != 'true';
       _isLoading = false;
     });
   }
