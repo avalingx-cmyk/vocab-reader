@@ -1,46 +1,46 @@
 import 'package:flutter/material.dart';
-import '../services/database_service.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/settings_provider.dart';
 import '../models/user_level.dart';
 
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+
+    if (settings.isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    return const _SettingsContent();
+  }
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
-  UserLevel _currentLevel = UserLevel.beginner;
+class _SettingsContent extends ConsumerStatefulWidget {
+  const _SettingsContent();
+
+  @override
+  ConsumerState<_SettingsContent> createState() => _SettingsContentState();
+}
+
+class _SettingsContentState extends ConsumerState<_SettingsContent> {
   final _openAIKeyController = TextEditingController();
   final _geminiKeyController = TextEditingController();
-  String _selectedProvider = 'openai';
 
   @override
   void initState() {
     super.initState();
-    _loadSettings();
-  }
-
-  Future<void> _loadSettings() async {
-    final level = await DatabaseService.instance.getSetting('user_level');
-    final provider = await DatabaseService.instance.getSetting('ai_provider');
-    final openAIKey = await DatabaseService.instance.getSetting('openai_key');
-    final geminiKey = await DatabaseService.instance.getSetting('gemini_key');
-
-    setState(() {
-      if (level != null) {
-        _currentLevel = UserLevel.fromString(level);
-      }
-      if (provider != null) {
-        _selectedProvider = provider;
-      }
-      if (openAIKey != null) {
-        _openAIKeyController.text = openAIKey;
-      }
-      if (geminiKey != null) {
-        _geminiKeyController.text = geminiKey;
-      }
-    });
+    final settings = ref.read(settingsProvider);
+    if (settings.openAIKey != null) {
+      _openAIKeyController.text = settings.openAIKey!;
+    }
+    if (settings.geminiKey != null) {
+      _geminiKeyController.text = settings.geminiKey!;
+    }
   }
 
   @override
@@ -51,10 +51,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _saveSettings() async {
-    await DatabaseService.instance.setSetting('user_level', _currentLevel.name);
-    await DatabaseService.instance.setSetting('ai_provider', _selectedProvider);
-    await DatabaseService.instance.setSetting('openai_key', _openAIKeyController.text);
-    await DatabaseService.instance.setSetting('gemini_key', _geminiKeyController.text);
+    final notifier = ref.read(settingsProvider.notifier);
+
+    await notifier.saveSettings(
+      openAIKey: _openAIKeyController.text,
+      geminiKey: _geminiKeyController.text,
+    );
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -65,6 +67,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final settings = ref.watch(settingsProvider);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
@@ -77,11 +81,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: Text(level.displayName),
             subtitle: Text(level.description),
             value: level,
-            groupValue: _currentLevel,
+            groupValue: settings.userLevel,
             onChanged: (value) {
-              setState(() {
-                _currentLevel = value!;
-              });
+              if (value != null) {
+                ref.read(settingsProvider.notifier).setUserLevel(value);
+              }
             },
           )),
           const Divider(height: 32),
@@ -90,22 +94,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: const Text('OpenAI'),
             subtitle: const Text('GPT-3.5 Turbo'),
             value: 'openai',
-            groupValue: _selectedProvider,
+            groupValue: settings.aiProvider,
             onChanged: (value) {
-              setState(() {
-                _selectedProvider = value!;
-              });
+              if (value != null) {
+                ref.read(settingsProvider.notifier).setAIProvider(value);
+              }
             },
           ),
           RadioListTile<String>(
             title: const Text('Google Gemini'),
             subtitle: const Text('Gemini Pro'),
             value: 'gemini',
-            groupValue: _selectedProvider,
+            groupValue: settings.aiProvider,
             onChanged: (value) {
-              setState(() {
-                _selectedProvider = value!;
-              });
+              if (value != null) {
+                ref.read(settingsProvider.notifier).setAIProvider(value);
+              }
             },
           ),
           const Divider(height: 32),

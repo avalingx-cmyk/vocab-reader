@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/word.dart';
+import '../providers/word_provider.dart';
+import '../providers/book_provider.dart';
+import '../services/database_service.dart';
+import 'edit_word_screen.dart';
 
-class WordDetailScreen extends StatelessWidget {
+class WordDetailScreen extends ConsumerWidget {
   final Word word;
 
   const WordDetailScreen({
@@ -10,20 +15,29 @@ class WordDetailScreen extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       appBar: AppBar(
         title: Text(word.text),
         actions: [
           IconButton(
             icon: const Icon(Icons.edit),
-            onPressed: () {
-              // TODO: Navigate to edit screen
+            onPressed: () async {
+              final result = await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => EditWordScreen(word: word),
+                ),
+              );
+              if (result == true && context.mounted) {
+                // Refresh word list after edit
+                ref.invalidate(wordListProvider(null));
+                Navigator.of(context).pop();
+              }
             },
           ),
           IconButton(
             icon: const Icon(Icons.delete),
-            onPressed: () => _showDeleteConfirmation(context),
+            onPressed: () => _showDeleteConfirmation(context, ref),
           ),
         ],
       ),
@@ -312,7 +326,7 @@ class WordDetailScreen extends StatelessWidget {
     );
   }
 
-  void _showDeleteConfirmation(BuildContext context) {
+  void _showDeleteConfirmation(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -325,9 +339,7 @@ class WordDetailScreen extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () async {
-              // TODO: Implement delete
-              Navigator.of(context).pop();
-              Navigator.of(context).pop();
+              await _deleteWord(context, ref);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
@@ -337,5 +349,36 @@ class WordDetailScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _deleteWord(BuildContext context, WidgetRef ref) async {
+    try {
+      // Remove from pending queue if applicable
+      if (word.isPending) {
+        await DatabaseService.instance.removeFromQueue(word.id);
+      }
+
+      // Delete the word
+      await DatabaseService.instance.deleteWord(word.id);
+
+      // Refresh providers
+      ref.invalidate(wordListProvider(null));
+      ref.invalidate(bookListProvider);
+
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Close dialog
+        Navigator.of(context).pop(); // Go back to home
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Word deleted')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error deleting word: $e')),
+        );
+      }
+    }
   }
 }

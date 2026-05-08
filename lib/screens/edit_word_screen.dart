@@ -1,43 +1,43 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:uuid/uuid.dart';
 import '../models/word.dart';
 import '../models/user_level.dart';
 import '../providers/word_provider.dart';
 import '../providers/book_provider.dart';
-import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
 
-class AddWordScreen extends ConsumerStatefulWidget {
-  const AddWordScreen({super.key});
+class EditWordScreen extends ConsumerStatefulWidget {
+  final Word word;
+
+  const EditWordScreen({
+    super.key,
+    required this.word,
+  });
 
   @override
-  ConsumerState<AddWordScreen> createState() => _AddWordScreenState();
+  ConsumerState<EditWordScreen> createState() => _EditWordScreenState();
 }
 
-class _AddWordScreenState extends ConsumerState<AddWordScreen> {
+class _EditWordScreenState extends ConsumerState<EditWordScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _wordController = TextEditingController();
-  final _bookController = TextEditingController();
-  final _pageController = TextEditingController();
-  final _contextController = TextEditingController();
-  
-  UserLevel _selectedLevel = UserLevel.beginner;
+  late final TextEditingController _wordController;
+  late final TextEditingController _bookController;
+  late final TextEditingController _pageController;
+  late final TextEditingController _contextController;
+
+  late UserLevel _selectedLevel;
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _loadUserLevel();
-  }
-
-  Future<void> _loadUserLevel() async {
-    final settings = ref.read(settingsProvider);
-    if (!settings.isLoading) {
-      setState(() {
-        _selectedLevel = settings.userLevel;
-      });
-    }
+    _wordController = TextEditingController(text: widget.word.text);
+    _bookController = TextEditingController(text: widget.word.bookName);
+    _pageController = TextEditingController(
+      text: widget.word.pageNumber?.toString() ?? '',
+    );
+    _contextController = TextEditingController(text: widget.word.context ?? '');
+    _selectedLevel = widget.word.userLevel;
   }
 
   @override
@@ -49,7 +49,7 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
     super.dispose();
   }
 
-  Future<void> _saveWord() async {
+  Future<void> _updateWord() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
@@ -57,34 +57,50 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
     });
 
     try {
-      final word = Word(
-        id: const Uuid().v4(),
-        text: _wordController.text.trim(),
-        bookName: _bookController.text.trim(),
-        pageNumber: _pageController.text.isNotEmpty
-            ? int.tryParse(_pageController.text)
-            : null,
-        context: _contextController.text.trim().isNotEmpty
-            ? _contextController.text.trim()
-            : null,
+      final newText = _wordController.text.trim();
+      final newBookName = _bookController.text.trim();
+      final newPageNumber = _pageController.text.isNotEmpty
+          ? int.tryParse(_pageController.text)
+          : null;
+      final newContext = _contextController.text.trim().isNotEmpty
+          ? _contextController.text.trim()
+          : null;
+
+      // Check if word text changed - if so, mark as pending to regenerate summary
+      final textChanged = newText != widget.word.text;
+      final levelChanged = _selectedLevel != widget.word.userLevel;
+      final shouldRegenerate = textChanged || levelChanged;
+
+      final updatedWord = widget.word.copyWith(
+        text: newText,
+        bookName: newBookName,
+        pageNumber: newPageNumber,
+        context: newContext,
         userLevel: _selectedLevel,
-        createdAt: DateTime.now(),
+        isPending: shouldRegenerate ? true : widget.word.isPending,
         updatedAt: DateTime.now(),
-        isPending: true,
       );
 
-      await DatabaseService.instance.addWord(word);
-      await DatabaseService.instance.addToQueue(word.id);
+      await DatabaseService.instance.updateWord(updatedWord);
 
-      // Refresh providers
-      ref.invalidate(wordListProvider(null));
-      ref.invalidate(bookListProvider);
+      // If text or level changed, add to queue for regeneration
+      if (shouldRegenerate && !widget.word.isPending) {
+        await DatabaseService.instance.addToQueue(widget.word.id);
+      }
 
       if (mounted) {
+        ref.invalidate(wordListProvider(null));
+        ref.invalidate(bookListProvider);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Word saved! AI summary will be generated when online.')),
+          SnackBar(
+            content: Text(
+              shouldRegenerate
+                  ? 'Word updated! AI summary will be regenerated.'
+                  : 'Word updated!',
+            ),
+          ),
         );
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(true);
       }
     } catch (e) {
       if (mounted) {
@@ -105,7 +121,7 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add Word'),
+        title: const Text('Edit Word'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -194,7 +210,7 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _saveWord,
+                  onPressed: _isLoading ? null : _updateWord,
                   icon: _isLoading
                       ? const SizedBox(
                           width: 20,
@@ -202,7 +218,7 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.save),
-                  label: Text(_isLoading ? 'Saving...' : 'Save Word'),
+                  label: Text(_isLoading ? 'Saving...' : 'Update Word'),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
