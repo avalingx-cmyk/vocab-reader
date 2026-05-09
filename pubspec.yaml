@@ -1,5 +1,5 @@
-name: vocab_reader
-description: A vocabulary learning app with AI-powered summaries
+name: bookbeam
+description: BookBeam - Your friendly AI reading companion and vocabulary guide
 
 publish_to: 'none'
 
@@ -26,7 +26,6 @@ dependencies:
   
   # Networking
   dio: ^5.4.0
-  
   # Environment variables
   flutter_dotenv: ^5.1.0
   
@@ -45,10 +44,17 @@ dev_dependencies:
   riverpod_generator: ^2.3.9
   build_runner: ^2.4.7
   custom_lint: ^0.5.7
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/app_icon.png"
+  min_sdk_android: 21
 
 flutter:
   uses-material-design: true
   
   assets:
     - .env
-    - assets/images/
+

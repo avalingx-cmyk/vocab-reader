@@ -1,4 +1,4 @@
-# VocabReader 📚
+# BookBeam 📚
 
 A Flutter mobile app for learning vocabulary from books with AI-powered summaries.
 
