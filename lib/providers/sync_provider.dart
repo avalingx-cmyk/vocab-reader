@@ -84,7 +84,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     // Reset to idle after a short delay
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) {
-        state = const SyncState(
+        state = SyncState(
           status: SyncStatus.idle,
           lastSyncTime: state.lastSyncTime,
         );

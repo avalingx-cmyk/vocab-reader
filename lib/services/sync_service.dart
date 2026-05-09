@@ -1,110 +1,173 @@
 import 'dart:async';
 import 'dart:math';
-import '../models/word.dart';
-import '../models/user_level.dart';
-import 'database_service.dart';
-import 'ai_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../services/database_service.dart';
+import '../services/ai_service.dart';
+
+enum SyncStatus { idle, syncing, completed, error }
+
+class SyncProgress {
+  final int processed;
+  final int total;
+  SyncProgress({required this.processed, required this.total});
+  double get percentage => total > 0 ? processed / total : 0.0;
+}
 
 class SyncService {
   static final SyncService instance = SyncService._internal();
   SyncService._internal();
 
-  final _syncStatusController = StreamController<SyncStatus>.broadcast();
-  final _syncProgressController = StreamController<SyncProgress>.broadcast();
+  final _statusCtrl = StreamController<SyncStatus>.broadcast();
+  final _progressCtrl = StreamController<SyncProgress>.broadcast();
 
-  Stream<SyncStatus> get syncStatusStream => _syncStatusController.stream;
-  Stream<SyncProgress> get syncProgressStream => _syncProgressController.stream;
+  Stream<SyncStatus> get syncStatusStream => _statusCtrl.stream;
+  Stream<SyncProgress> get syncProgressStream => _progressCtrl.stream;
 
   bool _isSyncing = false;
   bool get isSyncing => _isSyncing;
 
+  // ─── Main entry point ─────────────────────────────────────────────────────
+
   Future<void> processPendingQueue() async {
-    if (_isSyncing) return;
+    if (_isSyncing) {
+      print('SyncService: Already syncing, skipping.');
+      return;
+    }
     _isSyncing = true;
+    _statusCtrl.add(SyncStatus.syncing);
 
     try {
-      _syncStatusController.add(SyncStatus.syncing);
-
+      // Build AIService with keys from DB, fallback to .env
+      final aiService = await _buildAIService();
+      
       final queue = await DatabaseService.instance.getPendingQueue();
+      print('SyncService: ${queue.length} item(s) in pending queue.');
 
       if (queue.isEmpty) {
-        _syncStatusController.add(SyncStatus.completed);
-        _isSyncing = false;
+        _statusCtrl.add(SyncStatus.completed);
         return;
       }
 
-      _syncProgressController.add(SyncProgress(
-        processed: 0,
-        total: queue.length,
-      ));
-
-      // Load AI configuration
-      final provider = await DatabaseService.instance.getSetting('ai_provider') ?? 'openai';
-      final openAIKey = await DatabaseService.instance.getSetting('openai_key');
-      final geminiKey = await DatabaseService.instance.getSetting('gemini_key');
-
-      final aiService = AIService();
-      aiService.configure(
-        openAIKey: openAIKey,
-        geminiKey: geminiKey,
-        provider: provider,
-      );
-
-      for (int i = 0; i < queue.length; i++) {
-        final queueItem = queue[i];
-        final wordId = queueItem['word_id'] as String;
-
-        try {
-          await _processQueueItem(wordId, aiService);
-
-          _syncProgressController.add(SyncProgress(
-            processed: i + 1,
-            total: queue.length,
-          ));
-        } catch (e) {
-          // Update retry count
-          await _incrementRetryCount(wordId);
-          print('Error processing word $wordId: $e');
-        }
+      if (!aiService.isConfigured) {
+        print('SyncService: No API key configured — aborting sync. '
+            'Please set a key in Settings.');
+        _statusCtrl.add(SyncStatus.error);
+        return;
       }
 
-      _syncStatusController.add(SyncStatus.completed);
+      _progressCtrl.add(SyncProgress(processed: 0, total: queue.length));
+
+      int processed = 0;
+      for (final item in queue) {
+        final wordId = item['word_id'] as String;
+        try {
+          final success = await _processItem(wordId, aiService);
+          if (success) processed++;
+        } catch (e) {
+          print('SyncService: Exception on word $wordId: $e');
+          await _incrementRetry(wordId);
+        }
+        _progressCtrl.add(SyncProgress(processed: processed, total: queue.length));
+      }
+
+      print('SyncService: Done. $processed/${queue.length} processed successfully.');
+      _statusCtrl.add(SyncStatus.completed);
     } catch (e) {
-      _syncStatusController.add(SyncStatus.error);
-      print('Sync error: $e');
+      print('SyncService: Fatal error: $e');
+      _statusCtrl.add(SyncStatus.error);
     } finally {
       _isSyncing = false;
     }
   }
 
-  Future<void> _processQueueItem(String wordId, AIService aiService) async {
+  /// Resets all words that have no summary but are not currently pending,
+  /// and puts them back into the sync queue.
+  Future<void> resetFailedWords() async {
+    final words = await DatabaseService.instance.getWords();
+    final queue = await DatabaseService.instance.getPendingQueue();
+    final queuedIds = queue.map((e) => e['word_id'] as String).toSet();
+
+    int resetCount = 0;
+    for (final word in words) {
+      // If word has no summary and is not currently in the queue
+      if (word.summary == null && !queuedIds.contains(word.id)) {
+        await DatabaseService.instance.updateWord(
+          word.copyWith(isPending: true, updatedAt: DateTime.now()),
+        );
+        await DatabaseService.instance.addToQueue(word.id);
+        resetCount++;
+      }
+    }
+    
+    if (resetCount > 0) {
+      print('SyncService: Reset $resetCount failed words. Starting sync...');
+      processPendingQueue();
+    }
+  }
+
+  // ─── Build AIService ──────────────────────────────────────────────────────
+
+  Future<AIService> _buildAIService() async {
+    final provider = await DatabaseService.instance.getSetting('ai_provider') ?? 'gemini';
+    String? openAIKey = await DatabaseService.instance.getSetting('openai_key');
+    String? geminiKey = await DatabaseService.instance.getSetting('gemini_key');
+
+    // Fallback to .env
+    if (openAIKey == null || openAIKey.isEmpty) {
+      openAIKey = dotenv.env['OPENAI_API_KEY'];
+    }
+    if (geminiKey == null || geminiKey.isEmpty) {
+      geminiKey = dotenv.env['GEMINI_API_KEY'];
+    }
+
+    final activeKey = (provider == 'gemini' ? geminiKey : openAIKey) ?? '';
+    final keyPreview = activeKey.length > 8 
+        ? '${activeKey.substring(0, 4)}...${activeKey.substring(activeKey.length - 4)}'
+        : 'none/short';
+
+    print('SyncService: provider=$provider activeKey=$keyPreview');
+
+    final service = AIService();
+    service.configure(openAIKey: openAIKey, geminiKey: geminiKey, provider: provider);
+    return service;
+  }
+
+  // ─── Process single item ─────────────────────────────────────────────────
+
+  /// Returns true if successfully processed (summary saved or item cleaned up).
+  Future<bool> _processItem(String wordId, AIService aiService) async {
     final word = await DatabaseService.instance.getWord(wordId);
     if (word == null) {
+      // Orphaned queue entry – remove it
       await DatabaseService.instance.removeFromQueue(wordId);
-      return;
+      return true;
     }
 
     // Check retry count
-    final queue = await DatabaseService.instance.getPendingQueue();
-    final queueItem = queue.firstWhere(
-      (item) => item['word_id'] == wordId,
-      orElse: () => {},
+    final queueRows = await DatabaseService.instance.getPendingQueue();
+    final queueRow = queueRows.firstWhere(
+      (r) => r['word_id'] == wordId,
+      orElse: () => {'retry_count': 0},
     );
+    final retryCount = (queueRow['retry_count'] as int?) ?? 0;
 
-    final retryCount = queueItem['retry_count'] as int? ?? 0;
     if (retryCount >= 3) {
-      // Max retries reached, remove from queue
+      print('SyncService: Max retries ($retryCount) for "$wordId". '
+          'Marking as not-pending so it stops blocking.');
+      await DatabaseService.instance.updateWord(
+        word.copyWith(isPending: false, updatedAt: DateTime.now()),
+      );
       await DatabaseService.instance.removeFromQueue(wordId);
-      return;
+      return true;
     }
 
-    // Exponential backoff
+    // Exponential back-off on retries
     if (retryCount > 0) {
-      final backoffSeconds = pow(2, retryCount).toInt();
-      await Future.delayed(Duration(seconds: backoffSeconds));
+      final wait = Duration(seconds: pow(2, retryCount).toInt());
+      print('SyncService: Retry $retryCount – waiting ${wait.inSeconds}s for "$wordId".');
+      await Future.delayed(wait);
     }
 
-    // Generate summary
     final summary = await aiService.generateSummary(
       word: word.text,
       context: word.context,
@@ -112,22 +175,22 @@ class SyncService {
     );
 
     if (summary != null) {
-      // Update word with summary
-      final updatedWord = word.copyWith(
-        summary: summary,
-        isPending: false,
-        updatedAt: DateTime.now(),
+      await DatabaseService.instance.updateWord(
+        word.copyWith(summary: summary, isPending: false, updatedAt: DateTime.now()),
       );
-
-      await DatabaseService.instance.updateWord(updatedWord);
       await DatabaseService.instance.removeFromQueue(wordId);
+      print('SyncService: ✓ Summary saved for "${word.text}".');
+      return true;
     } else {
-      // Summary generation failed, increment retry
-      await _incrementRetryCount(wordId);
+      await _incrementRetry(wordId);
+      print('SyncService: ✗ Summary failed for "${word.text}" (retry ${retryCount + 1}).');
+      return false;
     }
   }
 
-  Future<void> _incrementRetryCount(String wordId) async {
+  // ─── Helpers ─────────────────────────────────────────────────────────────
+
+  Future<void> _incrementRetry(String wordId) async {
     final db = await DatabaseService.instance.database;
     await db.rawUpdate(
       'UPDATE pending_queue SET retry_count = retry_count + 1 WHERE word_id = ?',
@@ -136,21 +199,7 @@ class SyncService {
   }
 
   Future<void> dispose() async {
-    _syncStatusController.close();
-    _syncProgressController.close();
+    _statusCtrl.close();
+    _progressCtrl.close();
   }
-}
-
-enum SyncStatus { idle, syncing, completed, error }
-
-class SyncProgress {
-  final int processed;
-  final int total;
-
-  SyncProgress({
-    required this.processed,
-    required this.total,
-  });
-
-  double get percentage => total > 0 ? processed / total : 0.0;
 }

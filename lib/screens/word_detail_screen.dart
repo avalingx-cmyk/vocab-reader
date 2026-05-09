@@ -5,6 +5,7 @@ import '../providers/word_provider.dart';
 import '../providers/book_provider.dart';
 import '../services/database_service.dart';
 import 'edit_word_screen.dart';
+import '../theme/app_theme.dart';
 
 class WordDetailScreen extends ConsumerWidget {
   final Word word;
@@ -17,43 +18,55 @@ class WordDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(word.text),
+        backgroundColor: Colors.transparent,
         actions: [
           IconButton(
-            icon: const Icon(Icons.edit),
+            icon: const Icon(Icons.edit_note_rounded),
             onPressed: () async {
               final result = await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => EditWordScreen(word: word),
-                ),
+                MaterialPageRoute(builder: (_) => EditWordScreen(word: word)),
               );
               if (result == true && context.mounted) {
-                // Refresh word list after edit
                 ref.invalidate(wordListProvider(null));
                 Navigator.of(context).pop();
               }
             },
           ),
           IconButton(
-            icon: const Icon(Icons.delete),
+            icon: const Icon(Icons.delete_outline_rounded),
             onPressed: () => _showDeleteConfirmation(context, ref),
           ),
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildHeader(context),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
             if (word.isPending)
-              _buildPendingBanner(context)
+              _buildStatusBanner(
+                context,
+                icon: Icons.auto_awesome_rounded,
+                title: 'AI Summary Pending',
+                message: 'Our AI is currently analyzing this word. It will appear here shortly.',
+                color: AppTheme.accentAmber,
+              )
             else if (word.summary != null)
               _buildSummary(context)
             else
-              _buildNoSummary(context),
+              _buildStatusBanner(
+                context,
+                icon: Icons.info_outline_rounded,
+                title: 'No Summary Available',
+                message: 'We couldn\'t generate a summary for this word at the moment.',
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+
           ],
         ),
       ),
@@ -61,126 +74,95 @@ class WordDetailScreen extends ConsumerWidget {
   }
 
   Widget _buildHeader(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    word.text,
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+            Text(
+              word.text,
+              style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                    color: AppTheme.primaryBlue,
+                    fontWeight: FontWeight.bold,
                   ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryBlue.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                word.userLevel.displayName,
+                style: const TextStyle(color: AppTheme.primaryBlue, fontWeight: FontWeight.bold, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Icon(Icons.auto_stories_rounded, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Text(
+              '${word.bookName}${word.pageNumber != null ? ' • Page ${word.pageNumber}' : ''}',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        if (word.context != null) ...[
+          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Theme.of(context).dividerColor),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.format_quote_rounded, size: 16, color: AppTheme.primaryBlue.withValues(alpha: 0.5)),
+                    const SizedBox(width: 8),
+                    Text('CONTEXT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  ],
                 ),
-                Chip(
-                  label: Text(word.userLevel.displayName),
-                  backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                const SizedBox(height: 12),
+                Text(
+                  '"${word.context}"',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontStyle: FontStyle.italic,
+                        color: Theme.of(context).colorScheme.onSurface,
+                        height: 1.5,
+                      ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              '${word.bookName}${word.pageNumber != null ? ' • Page ${word.pageNumber}' : ''}',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Colors.grey[600],
-                  ),
-            ),
-            if (word.context != null) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Context',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '"${word.context}"',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontStyle: FontStyle.italic,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPendingBanner(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.orange.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.pending, color: Colors.orange[800], size: 48),
-          const SizedBox(height: 12),
-          Text(
-            'AI Summary Pending',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.orange[800],
-                ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Connect to the internet to generate the AI summary for this word.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.orange[700]),
           ),
         ],
-      ),
+      ],
     );
   }
 
-  Widget _buildNoSummary(BuildContext context) {
+  Widget _buildStatusBanner(BuildContext context, {required IconData icon, required String title, required String message, required Color color}) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(12),
+        color: color.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: color.withValues(alpha: 0.1)),
       ),
       child: Column(
         children: [
-          Icon(Icons.info_outline, color: Colors.grey[600], size: 48),
-          const SizedBox(height: 12),
-          Text(
-            'No Summary Available',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.grey[700],
-                ),
-          ),
+          Icon(icon, color: color, size: 48),
+          const SizedBox(height: 16),
+          Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: color)),
           const SizedBox(height: 8),
-          Text(
-            'Something went wrong while generating the summary.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey[600]),
-          ),
+          Text(message, textAlign: TextAlign.center, style: TextStyle(color: color.withValues(alpha: 0.8), height: 1.4)),
         ],
       ),
     );
@@ -189,138 +171,91 @@ class WordDetailScreen extends ConsumerWidget {
   Widget _buildSummary(BuildContext context) {
     final summary = word.summary!;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSection(
+        _buildSectionCard(
           context,
-          icon: Icons.menu_book,
+          icon: Icons.menu_book_rounded,
           title: 'Definition',
           content: summary.definition,
         ),
-        const SizedBox(height: 16),
-        _buildSection(
+        const SizedBox(height: 20),
+        _buildSectionCard(
           context,
-          icon: Icons.lightbulb_outline,
-          title: 'Main Say',
-          content: summary.mainSay,
+          icon: Icons.lightbulb_outline_rounded,
+          title: 'Example Use Cases',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: summary.useCases
+                .map((useCase) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(top: 6),
+                            child: Icon(Icons.circle, size: 6, color: AppTheme.primaryBlue),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(child: Text(useCase, style: const TextStyle(height: 1.5))),
+                        ],
+                      ),
+                    ))
+                .toList(),
+          ),
         ),
-        const SizedBox(height: 16),
-        _buildUseCases(context, summary.useCases),
-        const SizedBox(height: 16),
-        _buildSimilarWords(context, summary.similarWords),
-        const SizedBox(height: 16),
-        _buildSection(
+        const SizedBox(height: 20),
+        _buildSectionCard(
           context,
-          icon: Icons.description,
-          title: 'Detailed Summary',
-          content: summary.detailedSummary,
-          isLong: true,
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Generated on ${summary.generatedAt.toLocal().toString().split(' ')[0]}',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Colors.grey[500],
-              ),
+          icon: Icons.compare_arrows_rounded,
+          title: 'Similar Words',
+          content: summary.similarWords.join(', '),
         ),
       ],
     );
   }
 
-  Widget _buildSection(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String content,
-    bool isLong = false,
-  }) {
-    return Card(
-      child: ExpansionTile(
-        leading: Icon(icon, color: Theme.of(context).primaryColor),
-        title: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        initiallyExpanded: true,
+  Widget _buildSectionCard(BuildContext context, {required IconData icon, required String title, String? content, Widget? child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Text(
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryBlue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: AppTheme.primaryBlue, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                title.toUpperCase(),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurfaceVariant, letterSpacing: 1.2),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          if (content != null)
+            Text(
               content,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    height: 1.5,
-                  ),
+              style: TextStyle(fontSize: 16, height: 1.6, color: Theme.of(context).colorScheme.onSurface),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUseCases(BuildContext context, List<String> useCases) {
-    return Card(
-      child: ExpansionTile(
-        leading: Icon(Icons.format_quote, color: Theme.of(context).primaryColor),
-        title: const Text(
-          'Use Cases',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        initiallyExpanded: true,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: useCases.asMap().entries.map((entry) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${entry.key + 1}. ',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).primaryColor,
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(entry.value),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSimilarWords(BuildContext context, List<String> similarWords) {
-    return Card(
-      child: ExpansionTile(
-        leading: Icon(Icons.sync_alt, color: Theme.of(context).primaryColor),
-        title: const Text(
-          'Similar Words',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        initiallyExpanded: true,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: similarWords.map((word) {
-                return Chip(
-                  label: Text(word),
-                  backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-                );
-              }).toList(),
-            ),
-          ),
+          if (child != null) child,
         ],
       ),
     );
@@ -330,55 +265,30 @@ class WordDetailScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Word'),
-        content: Text('Are you sure you want to delete "${word.text}"?'),
+        title: const Text('Delete Word?'),
+        content: const Text('This will remove the word and its AI summary from your library.'),
         actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
             onPressed: () async {
-              await _deleteWord(context, ref);
+              if (word.isPending) {
+                await DatabaseService.instance.removeFromQueue(word.id);
+              }
+              await DatabaseService.instance.deleteWord(word.id);
+              // Invalidate all affected providers so book lists and word lists refresh
+              ref.invalidate(wordListProvider(null));
+              ref.invalidate(wordListProvider(word.bookName));
+              ref.invalidate(filteredWordsProvider(null));
+              ref.invalidate(bookListProvider);
+              if (context.mounted) {
+                Navigator.pop(context); // Close dialog
+                Navigator.pop(context); // Go back to list
+              }
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: const Text('Delete'),
+            child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
     );
-  }
-
-  Future<void> _deleteWord(BuildContext context, WidgetRef ref) async {
-    try {
-      // Remove from pending queue if applicable
-      if (word.isPending) {
-        await DatabaseService.instance.removeFromQueue(word.id);
-      }
-
-      // Delete the word
-      await DatabaseService.instance.deleteWord(word.id);
-
-      // Refresh providers
-      ref.invalidate(wordListProvider(null));
-      ref.invalidate(bookListProvider);
-
-      if (context.mounted) {
-        Navigator.of(context).pop(); // Close dialog
-        Navigator.of(context).pop(); // Go back to home
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Word deleted')),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error deleting word: $e')),
-        );
-      }
-    }
   }
 }

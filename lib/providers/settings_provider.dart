@@ -12,6 +12,7 @@ class SettingsState {
   final String aiProvider;
   final String? openAIKey;
   final String? geminiKey;
+  final int weeklyGoal;
   final bool isLoading;
 
   const SettingsState({
@@ -19,6 +20,7 @@ class SettingsState {
     this.aiProvider = 'openai',
     this.openAIKey,
     this.geminiKey,
+    this.weeklyGoal = 20,
     this.isLoading = true,
   });
 
@@ -27,6 +29,7 @@ class SettingsState {
     String? aiProvider,
     String? openAIKey,
     String? geminiKey,
+    int? weeklyGoal,
     bool? isLoading,
   }) {
     return SettingsState(
@@ -34,6 +37,7 @@ class SettingsState {
       aiProvider: aiProvider ?? this.aiProvider,
       openAIKey: openAIKey ?? this.openAIKey,
       geminiKey: geminiKey ?? this.geminiKey,
+      weeklyGoal: weeklyGoal ?? this.weeklyGoal,
       isLoading: isLoading ?? this.isLoading,
     );
   }
@@ -57,12 +61,14 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final provider = await DatabaseService.instance.getSetting('ai_provider');
     final openAIKey = await DatabaseService.instance.getSetting('openai_key');
     final geminiKey = await DatabaseService.instance.getSetting('gemini_key');
+    final weeklyGoalStr = await DatabaseService.instance.getSetting('weekly_goal');
 
     state = SettingsState(
       userLevel: levelStr != null ? UserLevel.fromString(levelStr) : UserLevel.beginner,
       aiProvider: provider ?? 'openai',
       openAIKey: openAIKey,
       geminiKey: geminiKey,
+      weeklyGoal: weeklyGoalStr != null ? int.tryParse(weeklyGoalStr) ?? 20 : 20,
       isLoading: false,
     );
   }
@@ -85,6 +91,11 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   Future<void> setGeminiKey(String key) async {
     await DatabaseService.instance.setSetting('gemini_key', key);
     state = state.copyWith(geminiKey: key);
+  }
+
+  Future<void> setWeeklyGoal(int goal) async {
+    await DatabaseService.instance.setSetting('weekly_goal', goal.toString());
+    state = state.copyWith(weeklyGoal: goal);
   }
 
   Future<void> saveSettings({

@@ -1,19 +1,20 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/word.dart';
 import '../providers/word_provider.dart';
+import '../providers/connectivity_provider.dart';
 import '../services/sync_service.dart';
 import 'add_word_screen.dart';
 import 'word_detail_screen.dart';
 import 'books_screen.dart';
+import 'quiz_screen.dart';
 import 'settings_screen.dart';
+import '../providers/settings_provider.dart';
+import '../theme/app_theme.dart';
+import '../models/user_level.dart';
 
-/// Provider for current bottom nav tab index
 final navIndexProvider = StateProvider<int>((ref) => 0);
-
-/// Provider to debounce search input
 final _debounceTimerProvider = StateProvider<Timer?>((ref) => null);
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -27,49 +28,54 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _isSearchExpanded = false;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
+  StreamSubscription<SyncStatus>? _syncSubscription;
 
   @override
   void initState() {
     super.initState();
-    _trySync();
-  }
-
-  Future<void> _trySync() async {
-    try {
-      final result = await InternetAddress.lookup('google.com');
-      final isConnected = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
-      if (isConnected && !SyncService.instance.isSyncing) {
-        await SyncService.instance.processPendingQueue();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _trySync());
+    
+    _syncSubscription = SyncService.instance.syncStatusStream.listen((status) {
+      if (status == SyncStatus.completed || status == SyncStatus.error) {
+        if (mounted) {
+          ref.invalidate(wordListProvider(null));
+          ref.invalidate(filteredWordsProvider(null));
+        }
       }
-    } on SocketException catch (_) {
-      // Offline, don't sync
-    }
+    });
   }
 
   @override
   void dispose() {
+    _syncSubscription?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
   }
 
+  Future<void> _trySync() async {
+    if (SyncService.instance.isSyncing) return;
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Checking for words to sync...'), duration: Duration(seconds: 1)),
+    );
+    await SyncService.instance.resetFailedWords();
+    if (mounted) ref.invalidate(wordListProvider(null));
+  }
+
   void _onSearchChanged(String value) {
     final timer = ref.read(_debounceTimerProvider);
     timer?.cancel();
-
     final newTimer = Timer(const Duration(milliseconds: 300), () {
       ref.read(wordSearchProvider.notifier).state = value;
     });
-
     ref.read(_debounceTimerProvider.notifier).state = newTimer;
   }
 
   void _clearSearch() {
     _searchController.clear();
     ref.read(wordSearchProvider.notifier).state = '';
-    setState(() {
-      _isSearchExpanded = false;
-    });
+    setState(() => _isSearchExpanded = false);
     _searchFocusNode.unfocus();
   }
 
@@ -77,13 +83,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final currentIndex = ref.watch(navIndexProvider);
 
+    ref.listen(connectivityProvider, (previous, next) {
+      if (previous?.value != true && next.value == true) {
+        _trySync();
+      }
+    });
+
     return Scaffold(
       appBar: AppBar(
-        title: currentIndex == 0 ? const Text('VocabReader') : const Text('Books'),
+        title: Text(
+          currentIndex == 0 ? 'My Library' : 'Bookshelf',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
         actions: [
           if (currentIndex == 0) ...[
+            _ConnectivityBadge(),
+            _SyncButton(onSyncPressed: _trySync),
             IconButton(
-              icon: const Icon(Icons.search),
+              icon: Icon(_isSearchExpanded ? Icons.close : Icons.search_rounded),
               onPressed: () {
                 setState(() {
                   _isSearchExpanded = !_isSearchExpanded;
@@ -96,87 +113,165 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               },
             ),
             IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                );
-              },
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              ),
             ),
           ],
         ],
-        bottom: currentIndex == 0
+        bottom: currentIndex == 0 && _isSearchExpanded
             ? PreferredSize(
-                preferredSize: Size.fromHeight(_isSearchExpanded ? 64 : 0),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  height: _isSearchExpanded ? 64 : 0,
-                  child: _isSearchExpanded
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          child: TextField(
-                            controller: _searchController,
-                            focusNode: _searchFocusNode,
-                            onChanged: _onSearchChanged,
-                            decoration: InputDecoration(
-                              hintText: 'Search words, books, definitions...',
-                              prefixIcon: const Icon(Icons.search),
-                              suffixIcon: _searchController.text.isNotEmpty
-                                  ? IconButton(
-                                      icon: const Icon(Icons.clear),
-                                      onPressed: () {
-                                        _searchController.clear();
-                                        ref.read(wordSearchProvider.notifier).state = '';
-                                      },
-                                    )
-                                  : null,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              filled: true,
-                              contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                            ),
-                          ),
-                        )
-                      : null,
+                preferredSize: const Size.fromHeight(72),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    onChanged: _onSearchChanged,
+                    decoration: InputDecoration(
+                      hintText: 'Search your vocabulary...',
+                      prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.primaryBlue),
+                      filled: true,
+                      fillColor: Theme.of(context).colorScheme.surface,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide(color: Theme.of(context).dividerColor),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide(color: Theme.of(context).dividerColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: const BorderSide(color: AppTheme.primaryBlue, width: 2),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+                    ),
+                  ),
                 ),
               )
             : null,
       ),
-      body: IndexedStack(
-        index: currentIndex,
-        children: const [
-          WordsTab(),
-          BooksScreen(),
-        ],
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Theme.of(context).scaffoldBackgroundColor,
+              Theme.of(context).colorScheme.surface,
+            ],
+          ),
+        ),
+        child: IndexedStack(
+          index: currentIndex,
+          children: const [
+            WordsTab(),
+            BooksScreen(),
+            QuizScreen(),
+          ],
+        ),
       ),
       floatingActionButton: currentIndex == 0
           ? FloatingActionButton.extended(
-              onPressed: () {
-                Navigator.of(context).push(
+              onPressed: () async {
+                await Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const AddWordScreen()),
                 );
+                if (mounted) {
+                  ref.invalidate(wordListProvider(null));
+                  _trySync();
+                }
               },
-              icon: const Icon(Icons.add),
-              label: const Text('Add Word'),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('New Word'),
+              backgroundColor: AppTheme.primaryBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
             )
           : null,
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: currentIndex,
-        onTap: (index) {
-          ref.read(navIndexProvider.notifier).state = index;
-        },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.library_books),
-            label: 'Words',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.menu_book),
-            label: 'Books',
-          ),
-        ],
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          boxShadow: [
+            BoxShadow(
+              color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
+              blurRadius: 20,
+              offset: const Offset(0, -5),
+            ),
+          ],
+        ),
+        child: BottomNavigationBar(
+          currentIndex: currentIndex,
+          onTap: (i) => ref.read(navIndexProvider.notifier).state = i,
+          showUnselectedLabels: false,
+          elevation: 0,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.style_rounded), // Cards icon for words
+              activeIcon: Icon(Icons.style_rounded),
+              label: 'Vocabulary',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.book_rounded),
+              activeIcon: Icon(Icons.book_rounded),
+              label: 'Books',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.quiz_outlined),
+              activeIcon: Icon(Icons.quiz_rounded),
+              label: 'Quiz',
+            ),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+class _ConnectivityBadge extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final conn = ref.watch(connectivityProvider);
+    final isOnline = conn.value ?? true;
+    if (isOnline) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.accentAmber.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Icon(Icons.wifi_off_rounded, size: 18, color: AppTheme.accentAmber),
+    );
+  }
+}
+
+class _SyncButton extends StatelessWidget {
+  final VoidCallback onSyncPressed;
+  const _SyncButton({required this.onSyncPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<SyncStatus>(
+      stream: SyncService.instance.syncStatusStream,
+      builder: (context, snapshot) {
+        final syncing = snapshot.data == SyncStatus.syncing || SyncService.instance.isSyncing;
+        if (syncing) {
+          return const Padding(
+            padding: EdgeInsets.all(12.0),
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryBlue),
+            ),
+          );
+        }
+        return IconButton(
+          icon: const Icon(Icons.sync_rounded),
+          onPressed: onSyncPressed,
+        );
+      },
     );
   }
 }
@@ -192,12 +287,21 @@ class WordsTab extends ConsumerWidget {
     return wordsAsync.when(
       data: (words) {
         if (words.isEmpty) {
-          if (searchQuery.isNotEmpty) {
-            return _buildNoResults(context, searchQuery);
-          }
-          return _buildEmptyState(context);
+          return searchQuery.isNotEmpty
+              ? _buildNoResults(context, searchQuery)
+              : _buildEmptyState(context);
         }
-        return _buildWordList(context, words);
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          itemCount: words.length + 1,
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              final booksCount = words.map((w) => w.bookName).toSet().length;
+              return _DashboardHeader(wordsCount: words.length, booksCount: booksCount);
+            }
+            return _WordCard(word: words[index - 1]);
+          },
+        );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) => Center(child: Text('Error: $error')),
@@ -206,163 +310,384 @@ class WordsTab extends ConsumerWidget {
 
   Widget _buildEmptyState(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.menu_book,
-            size: 80,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No words yet',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Start building your vocabulary by adding words from your books',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[600],
-                ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.of(context).push(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.auto_stories_rounded, size: 100, color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+            const SizedBox(height: 24),
+            Text('Your Library is Empty', style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 12),
+            Text(
+              'Add words you discover while reading to build your personal lexicon.',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const AddWordScreen()),
-              );
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Add Your First Word'),
-          ),
-        ],
+              ),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('Add Your First Word'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                backgroundColor: AppTheme.primaryBlue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
+
 
   Widget _buildNoResults(BuildContext context, String query) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.search_off,
-            size: 80,
-            color: Colors.grey[400],
+          Icon(Icons.search_off_rounded, size: 80, color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+          const SizedBox(height: 24),
+          Text('No Results Found', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          Text('We couldn\'t find anything matching "$query"', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashboardHeader extends ConsumerWidget {
+  final int wordsCount;
+  final int booksCount;
+
+  const _DashboardHeader({required this.wordsCount, required this.booksCount});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final int weeklyGoal = settings.weeklyGoal;
+    // Calculate new words this week - for demo we use a portion of total
+    final int newThisWeek = (wordsCount > (weeklyGoal * 0.8).toInt()) ? (weeklyGoal * 0.8).toInt() : wordsCount; 
+    final double progress = (weeklyGoal > 0) ? newThisWeek / weeklyGoal : 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Hello, Avaling!',
+          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _buildExpandableCart(
+                context, 
+                'Word Learn Cart', 
+                wordsCount.toString(), 
+                Icons.style_rounded, 
+                AppTheme.primaryBlue,
+                'Click to see all words',
+                () => ref.read(navIndexProvider.notifier).state = 0, // Stay here but highlight list
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildExpandableCart(
+                context, 
+                'Book Track Cart', 
+                booksCount.toString(), 
+                Icons.book_rounded, 
+                AppTheme.accentAmber,
+                'Click to manage books',
+                () => ref.read(navIndexProvider.notifier).state = 1, // Go to books tab
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        _buildMomentumCard(context, newThisWeek, weeklyGoal, progress),
+        const SizedBox(height: 32),
+        Text(
+          'Recent Words',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+        ),
+        const SizedBox(height: 12),
+      ],
+    );
+  }
+
+  Widget _buildExpandableCart(BuildContext context, String title, String value, IconData icon, Color color, String submenuText, VoidCallback onTap) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: color, size: 20),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    value,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const Divider(height: 24),
+                  Row(
+                    children: [
+                      Text(
+                        submenuText,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: color,
+                        ),
+                      ),
+                      const Spacer(),
+                      Icon(Icons.chevron_right_rounded, size: 14, color: color),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMomentumCard(BuildContext context, int current, int goal, double progress) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppTheme.primaryBlue, AppTheme.primaryBlue.withValues(alpha: 0.8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primaryBlue.withValues(alpha: 0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.local_fire_department_rounded, color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Keep the momentum!',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           Text(
-            'No results found',
-            style: Theme.of(context).textTheme.headlineSmall,
+            "You've learned $current new words this week. Reach your goal of $goal to unlock the 'Polyglot' badge.",
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 14, height: 1.4),
+          ),
+          const SizedBox(height: 20),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: LinearProgressIndicator(
+              value: progress,
+              backgroundColor: Colors.white.withValues(alpha: 0.2),
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+              minHeight: 8,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
-            'No words matching "$query"',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[600],
-                ),
-            textAlign: TextAlign.center,
+            '${(progress * 100).toInt()}% of weekly goal reached',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12, fontWeight: FontWeight.w600),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildWordList(BuildContext context, List<Word> words) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: words.length,
-      itemBuilder: (context, index) {
-        final word = words[index];
-        return _buildWordCard(context, word);
-      },
-    );
-  }
+class _WordCard extends StatelessWidget {
+  final Word word;
+  const _WordCard({required this.word});
 
-  Widget _buildWordCard(BuildContext context, Word word) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                word.text,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                ),
-              ),
-            ),
-            if (word.isPending)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => WordDetailScreen(word: word)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Icon(
-                      Icons.pending,
-                      size: 14,
-                      color: Colors.orange[800],
-                    ),
-                    const SizedBox(width: 4),
                     Text(
-                      'Pending',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.orange[800],
-                      ),
+                      word.text,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: AppTheme.primaryBlue,
+                            fontWeight: FontWeight.bold,
+                          ),
                     ),
+                    if (word.isPending) _PendingChip() else _LevelBadge(level: word.userLevel),
                   ],
                 ),
-              ),
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 8),
-            Text(
-              '${word.bookName}${word.pageNumber != null ? ' • Page ${word.pageNumber}' : ''}',
-              style: TextStyle(
-                color: Colors.grey[600],
-              ),
-            ),
-            if (word.summary != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                word.summary!.definition,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Chip(
-                  label: Text(word.userLevel.displayName),
-                  padding: EdgeInsets.zero,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                const SizedBox(height: 12),
+                if (word.summary != null)
+                  Text(
+                    word.summary!.definition,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 14, height: 1.4),
+                  ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Icon(Icons.bookmark_outline_rounded, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    const SizedBox(width: 6),
+                    Text(
+                      word.bookName,
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500),
+                    ),
+                    if (word.pageNumber != null) ...[
+                      const SizedBox(width: 12),
+                      Icon(Icons.tag_rounded, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Page ${word.pageNumber}',
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
         ),
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => WordDetailScreen(word: word),
-            ),
-          );
-        },
+      ),
+    );
+  }
+}
+
+class _LevelBadge extends StatelessWidget {
+  final UserLevel level;
+  const _LevelBadge({required this.level});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryBlue.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        level.displayName,
+        style: const TextStyle(
+          color: AppTheme.primaryBlue,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+}
+
+class _PendingChip extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.accentAmber.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.auto_awesome_rounded, size: 12, color: AppTheme.accentAmber),
+          SizedBox(width: 4),
+          Text(
+            'Analyzing',
+            style: TextStyle(fontSize: 11, color: AppTheme.accentAmber, fontWeight: FontWeight.bold),
+          ),
+        ],
       ),
     );
   }
