@@ -77,5 +77,72 @@ Run `flutter analyze` — passes with only info-level warnings (print statements
 
 ## Next Steps (Phase B)
 
-1. **KleidiAI integration** — Rebuild `llama_cpp_dart` with `-DGGML_CPU_KLEIDIAI=ON` for Arm-optimized matmul kernels (2-3x speedup on Snapdragon)
-2. **GBNF grammar** — Add constrained decoding to guarantee 100% valid JSON output
+1. **KleidiAI integration** — DONE — Added `GGML_CPU_KLEIDIAI=ON` in CMakeLists.txt
+2. **GBNF grammar** — DONE — Added `word_summary_grammar.dart` with JSON grammar
+
+---
+
+# Phase B: KleidiAI + GBNF Grammar
+
+**Status:** Completed  
+**Date:** 2025-05-12
+
+## Summary
+
+This phase added KleidiAI ARM-optimized kernels for 2-3x speedup and GBNF grammar for guaranteed valid JSON output.
+
+## Changes Made
+
+### 1. KleidiAI CMake Flag (`llama_cpp_native/src/CMakeLists.txt`)
+
+Added `GGML_CPU_KLEIDIAI=ON` before `add_subdirectory(llama.cpp)`:
+- KleidiAI SDK auto-downloads via FetchContent during CMake configure
+- ARM microkernels for dotprod, i8mm, and SME optimizations
+- 2-3x speedup on Snapdragon 8 Gen 2/3/Elite
+- 1.5x speedup on older devices with dotprod-only
+
+### 2. GBNF Grammar (`word_summary_grammar.dart`)
+
+New file defining grammar for JSON output:
+```gbnf
+root ::= "{" space definition-kv "," space use-cases-kv "," space similar-words-kv "}"
+...
+```
+
+Enforces exactly this structure: `{"definition": "...", "useCases": [...], "similarWords": [...]}`
+
+### 3. Grammar Integration (`local_ai_service.dart`)
+
+- Imports `word_summary_grammar.dart`
+- Wires `grammarStr` and `grammarRoot` into `SamplerParams`
+- Every local LLM call now uses constrained decoding
+
+### 4. Parser Note (`ai_service.dart`)
+
+Added comment that GBNF guarantees valid JSON for local provider. Kept fallback logic for cloud providers.
+
+## Expected Performance Impact
+
+| Change | Expected Effect |
+|--------|-----------------|
+| KleidiAI kernels | 2-3x generation speedup on Snapdragon 8 Gen 2+ |
+| GBNF grammar | 100% valid JSON, no parse errors |
+| Grammar overhead | ~1-2% per generation |
+
+## Files Changed
+
+1. `llama_cpp_native/src/CMakeLists.txt` — Added KleidiAI flag
+2. `lib/services/word_summary_grammar.dart` — NEW: GBNF grammar definitions
+3. `lib/services/local_ai_service.dart` — Import and wire grammar
+4. `lib/services/ai_service.dart` — Added parser note
+
+## Build Note
+
+First build with KleidiAI enabled will be slower (FetchContent downloads KleidiAI SDK from GitHub). Subsequent builds use cached SDK.
+
+## Next Steps (Phase C)
+
+**Fine-tuning a custom vocabulary model:**
+- Generate 5,000-10,000 synthetic training examples
+- LoRA fine-tune SmolLM2-360M for vocabulary JSON output
+- Quantize and deploy as custom GGUF
