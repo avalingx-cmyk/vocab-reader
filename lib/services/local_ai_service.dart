@@ -5,6 +5,7 @@ import 'package:llama_cpp_dart/llama_cpp_dart.dart';
 import 'package:path_provider/path_provider.dart';
 import 'device_capability.dart';
 import 'llama3_format.dart';
+import 'word_summary_grammar.dart';
 
 enum LocalAiError {
   none,
@@ -629,7 +630,9 @@ class LocalAIService {
       final samplingParams = SamplerParams()
         ..temp = 0.0
         ..penaltyRepeat = 1.05
-        ..greedy = true;
+        ..greedy = true
+        ..grammarStr = wordSummaryGrammar
+        ..grammarRoot = 'root';
 
       final loadCommand = LlamaLoad(
         path: path,
