@@ -51,10 +51,28 @@
 - **SettingsScreen** - Uses settingsProvider
 - **main.dart** - App startup with onboarding check
 
+### 9. AI Service & Cross-Platform Fixes (Phase 5)
+- **Gemini Model Fix:** Updated AIService to use stable `gemini-1.5-flash` endpoint.
+- **Windows Support:** Added platform-aware library loading for `llama_cpp_dart` on Windows, Linux, and Android.
+- **Sync Resilience:** Fixed `SyncService` to unconditionally trigger queue processing on manual sync requests.
+- **Logging & Debugging:** Enhanced logging in `AIService` and `SyncService` for better observability of network and parsing errors.
+- **Robust Parsing:** Added safety checks for Gemini JSON response candidates and parts to prevent null-pointer crashes.
+
+### 10. Android Native Library Bundling (Phase 6)
+- **Root Cause:** `llama_cpp_dart` is not a Flutter plugin, so `libmtmd.so` was never bundled in APK.
+- **Fix:** Created `android/llamalib/` Gradle module that builds `libmtmd.so` via CMake+NDK.
+- **Source Setup:** Created `llama_cpp_native/src/` with CMakeLists.txt, OpenCL headers/libs, and llama.cpp source at the correct commit (`4ffc47cb`).
+- **CMake Fix:** Added missing `models/*.cpp` source files to mtmd library build (needed for clip graph symbols).
+- **NDK Version:** Fixed from 29 to 28.2 (installed version).
+- **C++ Runtime:** Switched from `c++_shared` to `c++_static` to avoid conflicts with Flutter engine.
+- **Build Wiring:** Added `implementation(project(":llamalib"))` to `app/build.gradle.kts` and `include(":llamalib")` to `settings.gradle.kts`.
+- **minSdk:** Bumped from `flutter.minSdkVersion` (21) to 24 to match llamalib requirement.
+- **Build Verified:** `libmtmd.so` (1.5MB arm64, 1.6MB x86_64) builds successfully with all dependencies (llama, ggml, OpenCL, OpenMP).
+
 ## File Structure After Changes
 ```
 lib/
-├── main.dart (UPDATED - with onboarding check)
+├── main.dart (UPDATED - platform-aware Llama init)
 ├── models/
 │   ├── user_level.dart (unchanged)
 │   └── word.dart (unchanged)
@@ -73,7 +91,8 @@ lib/
 │   ├── onboarding_screen.dart (unchanged)
 │   └── settings_screen.dart (UPDATED - use providers)
 ├── services/
-│   ├── ai_service.dart (unchanged)
+│   ├── ai_service.dart (UPDATED - Gemini fix + logging)
 │   ├── database_service.dart (unchanged)
-│   └── sync_service.dart (NEW)
+│   ├── sync_service.dart (UPDATED - trigger logic + cleanup)
+│   └── local_ai_service.dart (UPDATED - platform-aware Isolate)
 ```

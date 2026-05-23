@@ -1,10 +1,24 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../services/database_service.dart';
 import '../services/ai_service.dart';
+import 'local_ai_service.dart';
+
+import '../providers/connectivity_provider.dart';
 
 enum SyncStatus { idle, syncing, completed, error }
+
+enum SyncError {
+  none,
+  notConfigured,
+  localLibUnavailable,
+  localModelMissing,
+  localAiFailed,
+  networkError,
+  unknown
+}
 
 class SyncProgress {
   final int processed;
@@ -15,7 +29,18 @@ class SyncProgress {
 
 class SyncService {
   static final SyncService instance = SyncService._internal();
-  SyncService._internal();
+  SyncService._internal() {
+    _init();
+  }
+
+  void _init() {
+    ConnectivityChecker.instance.connectivityStream.listen((isOnline) {
+      if (isOnline) {
+        print('SyncService: Connectivity restored. Triggering sync...');
+        processPendingQueue();
+      }
+    });
+  }
 
   final _statusCtrl = StreamController<SyncStatus>.broadcast();
   final _progressCtrl = StreamController<SyncProgress>.broadcast();
@@ -24,7 +49,21 @@ class SyncService {
   Stream<SyncProgress> get syncProgressStream => _progressCtrl.stream;
 
   bool _isSyncing = false;
+  bool _isCancelled = false;
   bool get isSyncing => _isSyncing;
+  SyncError lastError = SyncError.none;
+  String? lastErrorMessage;
+
+  void cancelSync() {
+    if (_isSyncing) {
+      _isCancelled = true;
+      final localAi = LocalAIService();
+      if (localAi.isGenerating) {
+        localAi.cancelGeneration();
+      }
+      print('SyncService: Sync cancellation requested.');
+    }
+  }
 
   // ─── Main entry point ─────────────────────────────────────────────────────
 
@@ -37,9 +76,17 @@ class SyncService {
     _statusCtrl.add(SyncStatus.syncing);
 
     try {
+      lastError = SyncError.none;
+      final provider =
+          await DatabaseService.instance.getSetting('ai_provider') ?? 'gemini';
+      final localModelId =
+          await DatabaseService.instance.getSetting('local_model_id') ?? 'qwen';
+      print(
+          'SyncService: Starting sync with provider=$provider localModel=$localModelId');
+
       // Build AIService with keys from DB, fallback to .env
       final aiService = await _buildAIService();
-      
+
       final queue = await DatabaseService.instance.getPendingQueue();
       print('SyncService: ${queue.length} item(s) in pending queue.');
 
@@ -48,40 +95,156 @@ class SyncService {
         return;
       }
 
+      // Check if local model is needed but missing or lib unavailable
+      if (provider == 'local') {
+        // First check if native library is even bundled in this build
+        if (!LocalAIService.isNativeLibraryAvailable()) {
+          print(
+              'SyncService: Native Llama library not available in this build. Use Gemini/OpenAI instead.');
+          lastError = SyncError.localLibUnavailable;
+          _statusCtrl.add(SyncStatus.error);
+          return;
+        }
+
+        final modelPath = await LocalAIService().getModelPath(localModelId);
+        final modelFile = File(modelPath);
+        if (!await modelFile.exists()) {
+          print('SyncService: Model file not found at $modelPath. '
+              'Go to Settings > AI Provider > Local AI Model to download it.');
+          lastError = SyncError.localModelMissing;
+          _statusCtrl.add(SyncStatus.error);
+          return;
+        }
+        final modelSize = await modelFile.length();
+        if (modelSize < 100 * 1024 * 1024) {
+          print('SyncService: Model file at $modelPath is incomplete '
+              '(${(modelSize / 1048576).toStringAsFixed(1)} MB). Delete it and re-download from Settings.');
+          lastError = SyncError.localModelMissing;
+          _statusCtrl.add(SyncStatus.error);
+          return;
+        }
+      }
+
       if (!aiService.isConfigured) {
-        print('SyncService: No API key configured — aborting sync. '
-            'Please set a key in Settings.');
+        print('SyncService: AIService is not configured. Aborting.');
+        lastError = SyncError.notConfigured;
         _statusCtrl.add(SyncStatus.error);
         return;
       }
 
       _progressCtrl.add(SyncProgress(processed: 0, total: queue.length));
 
-      int processed = 0;
-      for (final item in queue) {
-        final wordId = item['word_id'] as String;
-        try {
-          final success = await _processItem(wordId, aiService);
-          if (success) processed++;
-        } catch (e) {
-          print('SyncService: Exception on word $wordId: $e');
-          await _incrementRetry(wordId);
+      int processedCount = 0;
+      int totalFailCount = 0;
+      int retryPass = 0;
+
+      while (true) {
+        if (_isCancelled) {
+          print(
+              'SyncService: Sync cancelled. Processed $processedCount/${queue.length} before cancellation.');
+          break;
         }
-        _progressCtrl.add(SyncProgress(processed: processed, total: queue.length));
+
+        final currentQueue = await DatabaseService.instance.getPendingQueue();
+        if (currentQueue.isEmpty) {
+          print('SyncService: Queue is empty.');
+          break;
+        }
+
+        final processable = currentQueue.where((item) {
+          final retry = (item['retry_count'] as int?) ?? 0;
+          return retry < 3;
+        }).toList();
+
+        if (processable.isEmpty) {
+          print('SyncService: All remaining items exceed max retries.');
+          break;
+        }
+
+        _progressCtrl
+            .add(SyncProgress(processed: processedCount, total: queue.length));
+
+        int passFailCount = 0;
+
+        for (final item in processable) {
+          if (_isCancelled) break;
+
+          final wordId = item['word_id'] as String;
+          final retryCount = (item['retry_count'] as int?) ?? 0;
+
+          _progressCtrl
+              .add(SyncProgress(processed: processedCount, total: queue.length));
+          await Future.delayed(Duration.zero);
+
+          try {
+            final success = await _processItem(wordId, aiService, retryCount);
+            if (success) {
+              processedCount++;
+            } else {
+              passFailCount++;
+            }
+          } catch (e) {
+            print('SyncService: Exception on word $wordId: $e');
+            await _incrementRetry(wordId);
+            passFailCount++;
+          }
+
+          _progressCtrl
+              .add(SyncProgress(processed: processedCount, total: queue.length));
+          await Future.delayed(Duration.zero);
+        }
+
+        totalFailCount += passFailCount;
+
+        if (passFailCount == 0) {
+          break;
+        }
+
+        retryPass++;
+        final backoff = Duration(seconds: min(pow(2, retryPass).toInt(), 30));
+        print(
+            'SyncService: $passFailCount item(s) failed, retry pass $retryPass. '
+            'Waiting ${backoff.inSeconds}s...');
+        await Future.delayed(backoff);
       }
 
-      print('SyncService: Done. $processed/${queue.length} processed successfully.');
+      if (_isCancelled) {
+        print('SyncService: Sync was cancelled by user.');
+        _statusCtrl.add(SyncStatus.idle);
+      } else if (totalFailCount > 0 && provider == 'local') {
+        lastError = SyncError.localAiFailed;
+        lastErrorMessage = '$totalFailCount word(s) failed to generate. '
+            'The local model may have produced unparseable output. '
+            'Check logs or try Gemini/OpenAI.';
+        print('SyncService: $totalFailCount local AI item(s) failed.');
+      }
+
+      print(
+          'SyncService: Done. $processedCount/${queue.length} processed successfully.');
       _statusCtrl.add(SyncStatus.completed);
     } catch (e) {
       print('SyncService: Fatal error: $e');
+      final errStr = e.toString();
+      if (errStr.contains('NotInitialized') ||
+          errStr.contains('libmtmd') ||
+          errStr.contains('llama') ||
+          errStr.contains('DynamicLibrary')) {
+        lastError = SyncError.localLibUnavailable;
+      } else if (errStr.contains('Connection') ||
+          errStr.contains('SocketException')) {
+        lastError = SyncError.networkError;
+      } else {
+        lastError = SyncError.unknown;
+      }
       _statusCtrl.add(SyncStatus.error);
     } finally {
       _isSyncing = false;
+      _isCancelled = false;
     }
   }
 
-  /// Resets all words that have no summary but are not currently pending,
-  /// and puts them back into the sync queue.
+  /// Re-queues ALL words that have no summary so they can be retried.
+  /// This handles both words that failed silently and words stuck after max retries.
   Future<void> resetFailedWords() async {
     final words = await DatabaseService.instance.getWords();
     final queue = await DatabaseService.instance.getPendingQueue();
@@ -89,7 +252,8 @@ class SyncService {
 
     int resetCount = 0;
     for (final word in words) {
-      // If word has no summary and is not currently in the queue
+      // Re-queue any word without a summary, regardless of isPending status
+      // This catches words that hit max retries and were removed from queue
       if (word.summary == null && !queuedIds.contains(word.id)) {
         await DatabaseService.instance.updateWord(
           word.copyWith(isPending: true, updatedAt: DateTime.now()),
@@ -98,17 +262,20 @@ class SyncService {
         resetCount++;
       }
     }
-    
-    if (resetCount > 0) {
-      print('SyncService: Reset $resetCount failed words. Starting sync...');
-      processPendingQueue();
-    }
+
+    print(
+        'SyncService: Re-queued $resetCount word(s) without summaries. Starting queue processing...');
+    processPendingQueue();
   }
 
   // ─── Build AIService ──────────────────────────────────────────────────────
 
   Future<AIService> _buildAIService() async {
-    final provider = await DatabaseService.instance.getSetting('ai_provider') ?? 'gemini';
+    final provider =
+        await DatabaseService.instance.getSetting('ai_provider') ?? 'gemini';
+    final localModel =
+        await DatabaseService.instance.getSetting('local_model_id') ?? 'qwen';
+    // Key names must match what settings_provider.dart uses to save them
     String? openAIKey = await DatabaseService.instance.getSetting('openai_key');
     String? geminiKey = await DatabaseService.instance.getSetting('gemini_key');
 
@@ -121,21 +288,28 @@ class SyncService {
     }
 
     final activeKey = (provider == 'gemini' ? geminiKey : openAIKey) ?? '';
-    final keyPreview = activeKey.length > 8 
+    final keyPreview = activeKey.length > 8
         ? '${activeKey.substring(0, 4)}...${activeKey.substring(activeKey.length - 4)}'
-        : 'none/short';
+        : (activeKey.isEmpty ? 'none' : 'short/invalid');
 
-    print('SyncService: provider=$provider activeKey=$keyPreview');
+    print(
+        'SyncService: provider=$provider localModel=$localModel activeKey=$keyPreview');
 
     final service = AIService();
-    service.configure(openAIKey: openAIKey, geminiKey: geminiKey, provider: provider);
+    service.configure(
+      openAIKey: openAIKey,
+      geminiKey: geminiKey,
+      provider: provider,
+      localModelId: localModel,
+    );
     return service;
   }
 
   // ─── Process single item ─────────────────────────────────────────────────
 
   /// Returns true if successfully processed (summary saved or item cleaned up).
-  Future<bool> _processItem(String wordId, AIService aiService) async {
+  Future<bool> _processItem(
+      String wordId, AIService aiService, int retryCount) async {
     final word = await DatabaseService.instance.getWord(wordId);
     if (word == null) {
       // Orphaned queue entry – remove it
@@ -143,17 +317,9 @@ class SyncService {
       return true;
     }
 
-    // Check retry count
-    final queueRows = await DatabaseService.instance.getPendingQueue();
-    final queueRow = queueRows.firstWhere(
-      (r) => r['word_id'] == wordId,
-      orElse: () => {'retry_count': 0},
-    );
-    final retryCount = (queueRow['retry_count'] as int?) ?? 0;
-
     if (retryCount >= 3) {
-      print('SyncService: Max retries ($retryCount) for "$wordId". '
-          'Marking as not-pending so it stops blocking.');
+      print(
+          'SyncService: Max retries ($retryCount) for "${word.text}". Marking as not-pending.');
       await DatabaseService.instance.updateWord(
         word.copyWith(isPending: false, updatedAt: DateTime.now()),
       );
@@ -164,31 +330,36 @@ class SyncService {
     // Exponential back-off on retries
     if (retryCount > 0) {
       final wait = Duration(seconds: pow(2, retryCount).toInt());
-      print('SyncService: Retry $retryCount – waiting ${wait.inSeconds}s for "$wordId".');
+      print(
+          'SyncService: Retry $retryCount – waiting ${wait.inSeconds}s for "${word.text}".');
       await Future.delayed(wait);
     }
 
+    print('SyncService: Requesting summary for "${word.text}"...');
+    final isLocal =
+        await DatabaseService.instance.getSetting('ai_provider') == 'local';
     final summary = await aiService.generateSummary(
       word: word.text,
       context: word.context,
       level: word.userLevel,
+      keepAlive: isLocal && retryCount < 2,
     );
 
     if (summary != null) {
       await DatabaseService.instance.updateWord(
-        word.copyWith(summary: summary, isPending: false, updatedAt: DateTime.now()),
+        word.copyWith(
+            summary: summary, isPending: false, updatedAt: DateTime.now()),
       );
       await DatabaseService.instance.removeFromQueue(wordId);
       print('SyncService: ✓ Summary saved for "${word.text}".');
       return true;
     } else {
       await _incrementRetry(wordId);
-      print('SyncService: ✗ Summary failed for "${word.text}" (retry ${retryCount + 1}).');
+      print(
+          'SyncService: ✗ Summary failed for "${word.text}" (retry ${retryCount + 1}).');
       return false;
     }
   }
-
-  // ─── Helpers ─────────────────────────────────────────────────────────────
 
   Future<void> _incrementRetry(String wordId) async {
     final db = await DatabaseService.instance.database;

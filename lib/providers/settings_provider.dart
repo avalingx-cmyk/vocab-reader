@@ -10,6 +10,7 @@ final settingsProvider = StateNotifierProvider<SettingsNotifier, SettingsState>(
 class SettingsState {
   final UserLevel userLevel;
   final String aiProvider;
+  final String localModelId;
   final String? openAIKey;
   final String? geminiKey;
   final int weeklyGoal;
@@ -18,6 +19,7 @@ class SettingsState {
   const SettingsState({
     this.userLevel = UserLevel.beginner,
     this.aiProvider = 'openai',
+    this.localModelId = 'qwen',
     this.openAIKey,
     this.geminiKey,
     this.weeklyGoal = 20,
@@ -27,6 +29,7 @@ class SettingsState {
   SettingsState copyWith({
     UserLevel? userLevel,
     String? aiProvider,
+    String? localModelId,
     String? openAIKey,
     String? geminiKey,
     int? weeklyGoal,
@@ -35,12 +38,14 @@ class SettingsState {
     return SettingsState(
       userLevel: userLevel ?? this.userLevel,
       aiProvider: aiProvider ?? this.aiProvider,
+      localModelId: localModelId ?? this.localModelId,
       openAIKey: openAIKey ?? this.openAIKey,
       geminiKey: geminiKey ?? this.geminiKey,
       weeklyGoal: weeklyGoal ?? this.weeklyGoal,
       isLoading: isLoading ?? this.isLoading,
     );
   }
+
 
   bool get hasAIKey {
     if (aiProvider == 'openai') {
@@ -59,6 +64,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   Future<void> _loadSettings() async {
     final levelStr = await DatabaseService.instance.getSetting('user_level');
     final provider = await DatabaseService.instance.getSetting('ai_provider');
+    final localModel = await DatabaseService.instance.getSetting('local_model_id');
     final openAIKey = await DatabaseService.instance.getSetting('openai_key');
     final geminiKey = await DatabaseService.instance.getSetting('gemini_key');
     final weeklyGoalStr = await DatabaseService.instance.getSetting('weekly_goal');
@@ -66,6 +72,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = SettingsState(
       userLevel: levelStr != null ? UserLevel.fromString(levelStr) : UserLevel.beginner,
       aiProvider: provider ?? 'openai',
+      localModelId: localModel ?? 'qwen',
       openAIKey: openAIKey,
       geminiKey: geminiKey,
       weeklyGoal: weeklyGoalStr != null ? int.tryParse(weeklyGoalStr) ?? 20 : 20,
@@ -81,6 +88,11 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   Future<void> setAIProvider(String provider) async {
     await DatabaseService.instance.setSetting('ai_provider', provider);
     state = state.copyWith(aiProvider: provider);
+  }
+
+  Future<void> setLocalModelId(String modelId) async {
+    await DatabaseService.instance.setSetting('local_model_id', modelId);
+    state = state.copyWith(localModelId: modelId);
   }
 
   Future<void> setOpenAIKey(String key) async {

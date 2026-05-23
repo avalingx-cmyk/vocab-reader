@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:llama_cpp_dart/llama_cpp_dart.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'theme/app_theme.dart';
@@ -10,6 +12,22 @@ import 'providers/theme_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Local LLM library path for Android/iOS
+  // Wrapped in try-catch: if the native library is not bundled, the app
+  // continues normally and local AI features fail gracefully.
+  try {
+    if (Platform.isAndroid) {
+      Llama.libraryPath = "libmtmd.so";
+    } else if (Platform.isWindows) {
+      Llama.libraryPath = "llama.dll";
+    } else if (Platform.isLinux) {
+      Llama.libraryPath = "libllama.so";
+    }
+    print('main: Llama library path set for ${Platform.operatingSystem}');
+  } catch (e) {
+    print('main: Llama native library not available ($e). Local AI disabled.');
+  }
 
   // Load .env – failure is non-fatal (keys may be entered via Settings UI)
   try {

@@ -3,6 +3,9 @@ description: BookBeam - Your friendly AI reading companion and vocabulary guide
 
 publish_to: 'none'
 
+platforms:
+  android:
+
 version: 1.0.0+1
 
 environment:
@@ -11,7 +14,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.6
   
   # State management
   flutter_riverpod: ^2.4.9
@@ -33,6 +35,10 @@ dependencies:
   google_fonts: ^6.1.0
   shimmer: ^3.0.0
   
+  # AI
+  llama_cpp_dart: ^0.2.2
+  path_provider: ^2.1.2
+
   # Utils
   uuid: ^4.3.3
   intl: ^0.19.0
@@ -48,7 +54,6 @@ dev_dependencies:
 
 flutter_launcher_icons:
   android: "launcher_icon"
-  ios: true
   image_path: "assets/images/app_icon.png"
   min_sdk_android: 21
 

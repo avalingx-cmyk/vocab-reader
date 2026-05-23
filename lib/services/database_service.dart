@@ -162,11 +162,17 @@ class DatabaseService {
   // Pending queue operations
   Future<void> addToQueue(String wordId) async {
     final db = await database;
-    await db.insert('pending_queue', {
-      'word_id': wordId,
-      'queued_at': DateTime.now().toIso8601String(),
-      'retry_count': 0,
-    });
+    // INSERT OR REPLACE resets retry_count to 0 if word was already in queue
+    // (handles re-queuing after previous failures / max retries)
+    await db.insert(
+      'pending_queue',
+      {
+        'word_id': wordId,
+        'queued_at': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<void> removeFromQueue(String wordId) async {
