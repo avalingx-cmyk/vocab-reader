@@ -34,8 +34,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _trySync());
-    
+
     _syncSubscription = SyncService.instance.syncStatusStream.listen((status) {
+      if (status == SyncStatus.error) {
+        if (mounted) {
+          final reason = SyncService.instance.lastError;
+          final errMsg = SyncService.instance.lastErrorMessage;
+          String msg;
+          switch (reason) {
+            case SyncError.notConfigured:
+              msg = 'AI not configured. Add an API key in Settings.';
+              break;
+            case SyncError.localLibUnavailable:
+              msg =
+                  'Local AI engine missing in this build. Please use Gemini or OpenAI in Settings.';
+              break;
+            case SyncError.localModelMissing:
+              msg =
+                  'Local AI model not downloaded. Go to Settings to download it.';
+              break;
+            case SyncError.networkError:
+              msg = 'Network error. Please check your internet connection.';
+              break;
+            case SyncError.localAiFailed:
+              msg = errMsg ??
+                  'Local AI generation failed for some words. Check logs.';
+              break;
+            case SyncError.unknown:
+            default:
+              msg =
+                  'Sync failed. Check your API key or model download in Settings.';
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(msg),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
       if (status == SyncStatus.completed || status == SyncStatus.error) {
         if (mounted) {
           ref.invalidate(wordListProvider(null));
@@ -55,9 +93,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<void> _trySync() async {
     if (SyncService.instance.isSyncing) return;
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Checking for words to sync...'), duration: Duration(seconds: 1)),
+      const SnackBar(
+          content: Text('Checking for words to sync...'),
+          duration: Duration(seconds: 1)),
     );
     await SyncService.instance.resetFailedWords();
     if (mounted) ref.invalidate(wordListProvider(null));
@@ -100,7 +140,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _ConnectivityBadge(),
             _SyncButton(onSyncPressed: _trySync),
             IconButton(
-              icon: Icon(_isSearchExpanded ? Icons.close : Icons.search_rounded),
+              icon:
+                  Icon(_isSearchExpanded ? Icons.close : Icons.search_rounded),
               onPressed: () {
                 setState(() {
                   _isSearchExpanded = !_isSearchExpanded;
@@ -131,22 +172,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     onChanged: _onSearchChanged,
                     decoration: InputDecoration(
                       hintText: 'Search your vocabulary...',
-                      prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.primaryBlue),
+                      prefixIcon: const Icon(Icons.search_rounded,
+                          color: AppTheme.primaryBlue),
                       filled: true,
                       fillColor: Theme.of(context).colorScheme.surface,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(20),
-                        borderSide: BorderSide(color: Theme.of(context).dividerColor),
+                        borderSide:
+                            BorderSide(color: Theme.of(context).dividerColor),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(20),
-                        borderSide: BorderSide(color: Theme.of(context).dividerColor),
+                        borderSide:
+                            BorderSide(color: Theme.of(context).dividerColor),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(20),
-                        borderSide: const BorderSide(color: AppTheme.primaryBlue, width: 2),
+                        borderSide: const BorderSide(
+                            color: AppTheme.primaryBlue, width: 2),
                       ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 0),
                     ),
                   ),
                 ),
@@ -188,7 +234,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               label: const Text('New Word'),
               backgroundColor: AppTheme.primaryBlue,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30)),
             )
           : null,
       bottomNavigationBar: Container(
@@ -242,7 +289,8 @@ class _ConnectivityBadge extends ConsumerWidget {
         color: AppTheme.accentAmber.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const Icon(Icons.wifi_off_rounded, size: 18, color: AppTheme.accentAmber),
+      child: const Icon(Icons.wifi_off_rounded,
+          size: 18, color: AppTheme.accentAmber),
     );
   }
 }
@@ -256,14 +304,16 @@ class _SyncButton extends StatelessWidget {
     return StreamBuilder<SyncStatus>(
       stream: SyncService.instance.syncStatusStream,
       builder: (context, snapshot) {
-        final syncing = snapshot.data == SyncStatus.syncing || SyncService.instance.isSyncing;
+        final syncing = snapshot.data == SyncStatus.syncing ||
+            SyncService.instance.isSyncing;
         if (syncing) {
           return const Padding(
             padding: EdgeInsets.all(12.0),
             child: SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryBlue),
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: AppTheme.primaryBlue),
             ),
           );
         }
@@ -297,7 +347,8 @@ class WordsTab extends ConsumerWidget {
           itemBuilder: (context, index) {
             if (index == 0) {
               final booksCount = words.map((w) => w.bookName).toSet().length;
-              return _DashboardHeader(wordsCount: words.length, booksCount: booksCount);
+              return _DashboardHeader(
+                  wordsCount: words.length, booksCount: booksCount);
             }
             return _WordCard(word: words[index - 1]);
           },
@@ -315,13 +366,20 @@ class WordsTab extends ConsumerWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.auto_stories_rounded, size: 100, color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+            Icon(Icons.auto_stories_rounded,
+                size: 100,
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurfaceVariant
+                    .withValues(alpha: 0.5)),
             const SizedBox(height: 24),
-            Text('Your Library is Empty', style: Theme.of(context).textTheme.headlineSmall),
+            Text('Your Library is Empty',
+                style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 12),
             Text(
               'Add words you discover while reading to build your personal lexicon.',
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
@@ -332,10 +390,12 @@ class WordsTab extends ConsumerWidget {
               icon: const Icon(Icons.add_rounded, size: 18),
               label: const Text('Add Your First Word'),
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                 backgroundColor: AppTheme.primaryBlue,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30)),
               ),
             ),
           ],
@@ -344,17 +404,24 @@ class WordsTab extends ConsumerWidget {
     );
   }
 
-
   Widget _buildNoResults(BuildContext context, String query) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.search_off_rounded, size: 80, color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+          Icon(Icons.search_off_rounded,
+              size: 80,
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSurfaceVariant
+                  .withValues(alpha: 0.5)),
           const SizedBox(height: 24),
-          Text('No Results Found', style: Theme.of(context).textTheme.titleLarge),
+          Text('No Results Found',
+              style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
-          Text('We couldn\'t find anything matching "$query"', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          Text('We couldn\'t find anything matching "$query"',
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
         ],
       ),
     );
@@ -372,7 +439,9 @@ class _DashboardHeader extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final int weeklyGoal = settings.weeklyGoal;
     // Calculate new words this week - for demo we use a portion of total
-    final int newThisWeek = (wordsCount > (weeklyGoal * 0.8).toInt()) ? (weeklyGoal * 0.8).toInt() : wordsCount; 
+    final int newThisWeek = (wordsCount > (weeklyGoal * 0.8).toInt())
+        ? (weeklyGoal * 0.8).toInt()
+        : wordsCount;
     final double progress = (weeklyGoal > 0) ? newThisWeek / weeklyGoal : 0;
 
     return Column(
@@ -390,25 +459,27 @@ class _DashboardHeader extends ConsumerWidget {
           children: [
             Expanded(
               child: _buildExpandableCart(
-                context, 
-                'Word Learn Cart', 
-                wordsCount.toString(), 
-                Icons.style_rounded, 
+                context,
+                'Word Learn Cart',
+                wordsCount.toString(),
+                Icons.style_rounded,
                 AppTheme.primaryBlue,
                 'Click to see all words',
-                () => ref.read(navIndexProvider.notifier).state = 0, // Stay here but highlight list
+                () => ref.read(navIndexProvider.notifier).state =
+                    0, // Stay here but highlight list
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _buildExpandableCart(
-                context, 
-                'Book Track Cart', 
-                booksCount.toString(), 
-                Icons.book_rounded, 
+                context,
+                'Book Track Cart',
+                booksCount.toString(),
+                Icons.book_rounded,
                 AppTheme.accentAmber,
                 'Click to manage books',
-                () => ref.read(navIndexProvider.notifier).state = 1, // Go to books tab
+                () => ref.read(navIndexProvider.notifier).state =
+                    1, // Go to books tab
               ),
             ),
           ],
@@ -428,7 +499,8 @@ class _DashboardHeader extends ConsumerWidget {
     );
   }
 
-  Widget _buildExpandableCart(BuildContext context, String title, String value, IconData icon, Color color, String submenuText, VoidCallback onTap) {
+  Widget _buildExpandableCart(BuildContext context, String title, String value,
+      IconData icon, Color color, String submenuText, VoidCallback onTap) {
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
@@ -501,12 +573,16 @@ class _DashboardHeader extends ConsumerWidget {
     );
   }
 
-  Widget _buildMomentumCard(BuildContext context, int current, int goal, double progress) {
+  Widget _buildMomentumCard(
+      BuildContext context, int current, int goal, double progress) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [AppTheme.primaryBlue, AppTheme.primaryBlue.withValues(alpha: 0.8)],
+          colors: [
+            AppTheme.primaryBlue,
+            AppTheme.primaryBlue.withValues(alpha: 0.8)
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -530,19 +606,26 @@ class _DashboardHeader extends ConsumerWidget {
                   color: Colors.white.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.local_fire_department_rounded, color: Colors.white, size: 20),
+                child: const Icon(Icons.local_fire_department_rounded,
+                    color: Colors.white, size: 20),
               ),
               const SizedBox(width: 12),
               const Text(
                 'Keep the momentum!',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16),
               ),
             ],
           ),
           const SizedBox(height: 16),
           Text(
             "You've learned $current new words this week. Reach your goal of $goal to unlock the 'Polyglot' badge.",
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 14, height: 1.4),
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.9),
+                fontSize: 14,
+                height: 1.4),
           ),
           const SizedBox(height: 20),
           ClipRRect(
@@ -557,7 +640,10 @@ class _DashboardHeader extends ConsumerWidget {
           const SizedBox(height: 8),
           Text(
             '${(progress * 100).toInt()}% of weekly goal reached',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12, fontWeight: FontWeight.w600),
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8),
+                fontSize: 12,
+                fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -605,7 +691,10 @@ class _WordCard extends StatelessWidget {
                             fontWeight: FontWeight.bold,
                           ),
                     ),
-                    if (word.isPending) _PendingChip() else _LevelBadge(level: word.userLevel),
+                    if (word.isPending)
+                      _PendingChip()
+                    else
+                      _LevelBadge(level: word.userLevel),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -614,24 +703,38 @@ class _WordCard extends StatelessWidget {
                     word.summary!.definition,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 14, height: 1.4),
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 14,
+                        height: 1.4),
                   ),
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    Icon(Icons.bookmark_outline_rounded, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    Icon(Icons.bookmark_outline_rounded,
+                        size: 14,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
                     const SizedBox(width: 6),
                     Text(
                       word.bookName,
-                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500),
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500),
                     ),
                     if (word.pageNumber != null) ...[
                       const SizedBox(width: 12),
-                      Icon(Icons.tag_rounded, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      Icon(Icons.tag_rounded,
+                          size: 14,
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant),
                       const SizedBox(width: 4),
                       Text(
                         'Page ${word.pageNumber}',
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
+                        style: TextStyle(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontSize: 12),
                       ),
                     ],
                   ],
@@ -681,11 +784,15 @@ class _PendingChip extends StatelessWidget {
       child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.auto_awesome_rounded, size: 12, color: AppTheme.accentAmber),
+          Icon(Icons.auto_awesome_rounded,
+              size: 12, color: AppTheme.accentAmber),
           SizedBox(width: 4),
           Text(
             'Analyzing',
-            style: TextStyle(fontSize: 11, color: AppTheme.accentAmber, fontWeight: FontWeight.bold),
+            style: TextStyle(
+                fontSize: 11,
+                color: AppTheme.accentAmber,
+                fontWeight: FontWeight.bold),
           ),
         ],
       ),

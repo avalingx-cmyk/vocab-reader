@@ -2,12 +2,9 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project(llama_cpp_dart_wrapper)
 
-# Enable KleidiAI ARM-optimized kernels for faster inference on Snapdragon devices
-# KleidiAI provides 2-3x speedup via dotprod/i8mm/SME microkernels
-# The SDK auto-downloads via FetchContent during CMake configure
-if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
-    set(GGML_CPU_KLEIDIAI ON CACHE BOOL "Enable KleidiAI ARM kernels" FORCE)
-endif()
+# KleidiAI disabled by default — requires CMake 3.28+ for FetchContent.
+# Enable manually via -DGGML_CPU_KLEIDIAI=ON with CMake 3.28+.
+set(GGML_CPU_KLEIDIAI OFF CACHE BOOL "Enable KleidiAI ARM kernels")
 
 # Add llama.cpp (builds llama, ggml, and applies build flags)
 add_subdirectory(llama.cpp)

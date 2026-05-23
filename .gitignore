@@ -11,6 +11,7 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+nul
 
 # IntelliJ related
 *.iml
@@ -40,16 +41,41 @@ app.*.symbols
 app.*.map.json
 
 # Android Studio will place build artifacts here
+android/.gradle/
+android/.kotlin/
+android/local.properties
+android/gradlew
+android/gradlew.bat
 /android/app/debug
 /android/app/profile
 /android/app/release
 
-
 .env
 .agent/
 .vscode/
-android/
-ios/
 .planning/
 graphify-out/
 skills/
+
+# Android-only project — ignore other platforms
+ios/
+macos/
+web/
+windows/
+linux/
+/ios/
+/macos/
+/web/
+/windows/
+/linux/
+
+# Native build dependencies (heavy third-party source trees)
+llama_cpp_native/src/llama.cpp/
+llama_cpp_native/src/miniaudio/
+llama_cpp_native/src/OpenCL-Headers/
+llama_cpp_native/src/opencl-libs/
+llama_cpp_native/src/stb/
+
+# Research artifacts
+research-log.md
+research-state.yaml

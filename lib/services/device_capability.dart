@@ -119,13 +119,13 @@ class DeviceCapability {
   int get optimalMaxTokens {
     switch (tier) {
       case DeviceTier.flagship:
-        return 200;
-      case DeviceTier.high:
-        return 150;
-      case DeviceTier.mid:
         return 120;
-      case DeviceTier.low:
+      case DeviceTier.high:
         return 80;
+      case DeviceTier.mid:
+        return 60;
+      case DeviceTier.low:
+        return 50;
     }
   }
 

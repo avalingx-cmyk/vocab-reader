@@ -421,8 +421,7 @@ class LocalAIService {
         _generationTimeout,
         onTimeout: () {
           print(
-              'LocalAIService: Generation timed out after ${_generationTimeout.inSeconds}s, $tokenCount tokens. Stopping...');
-          parent?.stop();
+              'LocalAIService: Generation timed out after ${_generationTimeout.inSeconds}s, $tokenCount tokens. Parent will be disposed on failure path.');
           return CompletionEvent(promptId!, false, 'Generation timed out');
         },
       );
@@ -453,9 +452,7 @@ class LocalAIService {
       if (completion.success == false) {
         final errMsg = completion.errorDetails ?? 'Generation failed';
         print('LocalAIService: Generation failed: $errMsg');
-        if (!keepAlive) {
-          await _unloadParent(parent);
-        }
+        await _unloadParent(parent);
         return LocalAiResult(
           error: LocalAiError.generationFailed,
           message: errMsg,
@@ -465,9 +462,7 @@ class LocalAIService {
       final result = buffer.toString().trim();
       if (result.isEmpty) {
         print('LocalAIService: Empty result despite $tokenCount tokens');
-        if (!keepAlive) {
-          await _unloadParent(parent);
-        }
+        await _unloadParent(parent);
         return const LocalAiResult(
           error: LocalAiError.generationFailed,
           message: 'Local model returned empty response.',
@@ -672,7 +667,12 @@ class LocalAIService {
     _currentModelId = null;
     if (parent != null) {
       try {
-        await parent.dispose();
+        await parent.dispose().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            print('LocalAIService: Dispose timed out, forcing cleanup.');
+          },
+        );
       } catch (e) {
         print('LocalAIService: Dispose error: $e');
       }
