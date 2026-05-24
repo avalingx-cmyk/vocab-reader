@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:llama_cpp_dart/llama_cpp_dart.dart';
 import 'package:path_provider/path_provider.dart';
@@ -153,8 +154,11 @@ class LocalAIService {
     return true;
   }
 
-  Future<LocalAiResult> downloadModel(String modelId,
-      void Function(int count, int total) onReceiveProgress) async {
+  Future<LocalAiResult> downloadModel(
+    String modelId,
+    void Function(int count, int total) onReceiveProgress, {
+    CancelToken? cancelToken,
+  }) async {
     final config = getModelConfig(modelId);
     final path = await getModelPath(modelId);
     final dio = Dio();
@@ -170,11 +174,19 @@ class LocalAIService {
         config.downloadUrl,
         tempPath,
         onReceiveProgress: onReceiveProgress,
+        cancelToken: cancelToken,
         options: Options(
           responseType: ResponseType.bytes,
           followRedirects: true,
         ),
       );
+
+      if (cancelToken?.isCancelled == true) {
+        return const LocalAiResult(
+          error: LocalAiError.unknown,
+          message: 'Download cancelled',
+        );
+      }
 
       if (!await tempFile.exists()) {
         return const LocalAiResult(
@@ -198,6 +210,12 @@ class LocalAIService {
     } on DioException catch (e) {
       final tempFile = File(tempPath);
       if (await tempFile.exists()) await tempFile.delete();
+      if (e.type == DioExceptionType.cancel) {
+        return const LocalAiResult(
+          error: LocalAiError.unknown,
+          message: 'Download cancelled',
+        );
+      }
       String msg;
       switch (e.type) {
         case DioExceptionType.connectionTimeout:

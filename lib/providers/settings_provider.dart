@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user_level.dart';
+import '../services/cactus_local_service.dart';
 import '../services/database_service.dart';
+import '../services/local_ai_service.dart';
 
 /// Provider for app settings
 final settingsProvider = StateNotifierProvider<SettingsNotifier, SettingsState>((ref) {
@@ -11,6 +13,7 @@ class SettingsState {
   final UserLevel userLevel;
   final String aiProvider;
   final String localModelId;
+  final String cactusModelId;
   final String? openAIKey;
   final String? geminiKey;
   final int weeklyGoal;
@@ -20,6 +23,7 @@ class SettingsState {
     this.userLevel = UserLevel.beginner,
     this.aiProvider = 'openai',
     this.localModelId = 'qwen',
+    this.cactusModelId = 'gemma-270m',
     this.openAIKey,
     this.geminiKey,
     this.weeklyGoal = 20,
@@ -30,6 +34,7 @@ class SettingsState {
     UserLevel? userLevel,
     String? aiProvider,
     String? localModelId,
+    String? cactusModelId,
     String? openAIKey,
     String? geminiKey,
     int? weeklyGoal,
@@ -39,6 +44,7 @@ class SettingsState {
       userLevel: userLevel ?? this.userLevel,
       aiProvider: aiProvider ?? this.aiProvider,
       localModelId: localModelId ?? this.localModelId,
+      cactusModelId: cactusModelId ?? this.cactusModelId,
       openAIKey: openAIKey ?? this.openAIKey,
       geminiKey: geminiKey ?? this.geminiKey,
       weeklyGoal: weeklyGoal ?? this.weeklyGoal,
@@ -65,19 +71,42 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final levelStr = await DatabaseService.instance.getSetting('user_level');
     final provider = await DatabaseService.instance.getSetting('ai_provider');
     final localModel = await DatabaseService.instance.getSetting('local_model_id');
+    final cactusModel = await DatabaseService.instance.getSetting('cactus_model_id');
     final openAIKey = await DatabaseService.instance.getSetting('openai_key');
     final geminiKey = await DatabaseService.instance.getSetting('gemini_key');
     final weeklyGoalStr = await DatabaseService.instance.getSetting('weekly_goal');
 
+    final validLocalIds =
+        LocalAIService.availableModels.map((m) => m.id).toSet();
+    final safeLocalModel =
+        localModel != null && validLocalIds.contains(localModel)
+            ? localModel
+            : 'qwen';
+
+    final validCactusIds =
+        CactusLocalService.availableModels.map((m) => m.id).toSet();
+    final safeCactusModel =
+        cactusModel != null && validCactusIds.contains(cactusModel)
+            ? cactusModel
+            : 'gemma-270m';
+
     state = SettingsState(
       userLevel: levelStr != null ? UserLevel.fromString(levelStr) : UserLevel.beginner,
       aiProvider: provider ?? 'openai',
-      localModelId: localModel ?? 'qwen',
+      localModelId: safeLocalModel,
+      cactusModelId: safeCactusModel,
       openAIKey: openAIKey,
       geminiKey: geminiKey,
       weeklyGoal: weeklyGoalStr != null ? int.tryParse(weeklyGoalStr) ?? 20 : 20,
       isLoading: false,
     );
+
+    if (safeLocalModel != localModel) {
+      await DatabaseService.instance.setSetting('local_model_id', safeLocalModel);
+    }
+    if (safeCactusModel != cactusModel) {
+      await DatabaseService.instance.setSetting('cactus_model_id', safeCactusModel);
+    }
   }
 
   Future<void> setUserLevel(UserLevel level) async {
@@ -93,6 +122,11 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   Future<void> setLocalModelId(String modelId) async {
     await DatabaseService.instance.setSetting('local_model_id', modelId);
     state = state.copyWith(localModelId: modelId);
+  }
+
+  Future<void> setCactusModelId(String modelId) async {
+    await DatabaseService.instance.setSetting('cactus_model_id', modelId);
+    state = state.copyWith(cactusModelId: modelId);
   }
 
   Future<void> setOpenAIKey(String key) async {

@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../services/database_service.dart';
 import '../services/ai_service.dart';
 import 'local_ai_service.dart';
+import 'cactus_local_service.dart';
 
 import '../providers/connectivity_provider.dart';
 
@@ -61,6 +62,10 @@ class SyncService {
       if (localAi.isGenerating) {
         localAi.cancelGeneration();
       }
+      final cactus = CactusLocalService();
+      if (cactus.isGenerating) {
+        cactus.cancelGeneration();
+      }
       print('SyncService: Sync cancellation requested.');
     }
   }
@@ -79,8 +84,9 @@ class SyncService {
       lastError = SyncError.none;
       final provider =
           await DatabaseService.instance.getSetting('ai_provider') ?? 'gemini';
-      final localModelId =
-          await DatabaseService.instance.getSetting('local_model_id') ?? 'qwen';
+      final localModelId = provider == 'cactus'
+          ? await DatabaseService.instance.getSetting('cactus_model_id') ?? 'gemma-270m'
+          : await DatabaseService.instance.getSetting('local_model_id') ?? 'qwen';
       print(
           'SyncService: Starting sync with provider=$provider localModel=$localModelId');
 
@@ -97,10 +103,9 @@ class SyncService {
 
       // Check if local model is needed but missing or lib unavailable
       if (provider == 'local') {
-        // First check if native library is even bundled in this build
         if (!LocalAIService.isNativeLibraryAvailable()) {
           print(
-              'SyncService: Native Llama library not available in this build. Use Gemini/OpenAI instead.');
+              'SyncService: Native Llama library not available in this build. Use Cactus, Gemini or OpenAI instead.');
           lastError = SyncError.localLibUnavailable;
           _statusCtrl.add(SyncStatus.error);
           return;
@@ -110,7 +115,7 @@ class SyncService {
         final modelFile = File(modelPath);
         if (!await modelFile.exists()) {
           print('SyncService: Model file not found at $modelPath. '
-              'Go to Settings > AI Provider > Local AI Model to download it.');
+              'Go to Settings > AI Provider to download it.');
           lastError = SyncError.localModelMissing;
           _statusCtrl.add(SyncStatus.error);
           return;
@@ -119,6 +124,18 @@ class SyncService {
         if (modelSize < 100 * 1024 * 1024) {
           print('SyncService: Model file at $modelPath is incomplete '
               '(${(modelSize / 1048576).toStringAsFixed(1)} MB). Delete it and re-download from Settings.');
+          lastError = SyncError.localModelMissing;
+          _statusCtrl.add(SyncStatus.error);
+          return;
+        }
+      }
+
+      if (provider == 'cactus') {
+        final modelPath = await CactusLocalService().getModelPath(localModelId);
+        final modelDir = Directory(modelPath);
+        if (!await modelDir.exists()) {
+          print('SyncService: Cactus model not found at $modelPath. '
+              'Go to Settings > AI Provider to download it.');
           lastError = SyncError.localModelMissing;
           _statusCtrl.add(SyncStatus.error);
           return;
@@ -273,8 +290,9 @@ class SyncService {
   Future<AIService> _buildAIService() async {
     final provider =
         await DatabaseService.instance.getSetting('ai_provider') ?? 'gemini';
-    final localModel =
-        await DatabaseService.instance.getSetting('local_model_id') ?? 'qwen';
+    final localModel = provider == 'cactus'
+        ? await DatabaseService.instance.getSetting('cactus_model_id') ?? 'gemma-270m'
+        : await DatabaseService.instance.getSetting('local_model_id') ?? 'qwen';
     // Key names must match what settings_provider.dart uses to save them
     String? openAIKey = await DatabaseService.instance.getSetting('openai_key');
     String? geminiKey = await DatabaseService.instance.getSetting('gemini_key');

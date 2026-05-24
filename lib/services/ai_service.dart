@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import '../models/word.dart';
 import '../models/user_level.dart';
 import 'local_ai_service.dart';
+import 'cactus_local_service.dart';
 import 'device_capability.dart';
 
 class AIService {
@@ -14,6 +15,7 @@ class AIService {
 
   final Dio _dio = Dio();
   final LocalAIService _localAiService = LocalAIService();
+  final CactusLocalService _cactusService = CactusLocalService();
   String? _openAIKey;
   String? _geminiKey;
   String _provider = 'gemini';
@@ -32,11 +34,10 @@ class AIService {
     print('AIService.configure: provider=$_provider localModel=$_localModelId '
         'openAI=${_openAIKey != null} gemini=${_geminiKey != null}');
 
-    // Add base options
     _dio.options.connectTimeout = const Duration(seconds: 10);
     _dio.options.receiveTimeout = const Duration(seconds: 30);
 
-    if (_provider == 'local' && !_localAiService.isInitialized) {
+    if (provider == 'local' && !_localAiService.isInitialized) {
       _localAiService.initialize(_localModelId);
     }
   }
@@ -53,6 +54,7 @@ class AIService {
       return _geminiKey != null;
     }
     if (_provider == 'local') return true;
+    if (_provider == 'cactus') return true;
     return false;
   }
 
@@ -67,6 +69,9 @@ class AIService {
       return _generateWithOpenAI(word, context, level);
     } else if (_provider == 'gemini' && _geminiKey != null) {
       return _generateWithGemini(word, context, level);
+    } else if (_provider == 'cactus') {
+      return _generateWithCactus(word, context, level,
+          keepAlive: keepAlive);
     } else if (_provider == 'local') {
       return _generateWithLocal(word, context, level, keepAlive: keepAlive);
     }
@@ -115,6 +120,63 @@ class AIService {
       }
     }
     print('AIService: Local LLM generation failed: ${genResult.message}');
+    return null;
+  }
+
+  // ─── Cactus ──────────────────────────────────────────────────────────
+
+  Future<WordSummary?> _generateWithCactus(
+    String word,
+    String? context,
+    UserLevel level, {
+    bool keepAlive = false,
+  }) async {
+    final initResult = await _cactusService.initialize(_localModelId);
+    if (!initResult.isSuccess) {
+      print('AIService: Cactus init failed: ${initResult.message}');
+      return null;
+    }
+
+    final device = DeviceCapability.instance;
+    final systemPrompt = 'You are a dictionary. Output ONLY valid JSON with ALL fields filled: '
+        '{"definition":"","useCases":["","",""],"similarWords":["","",""]}. '
+        'Always include exactly 3 use cases and 3 similar words. '
+        'Do not repeat the input word. Do not add extra text before or after the JSON.';
+    final userPrompt = _buildLocalUserPrompt(word, context, level);
+    print('AIService: Calling Cactus (${_localModelId}) for "$word" '
+        'on ${device.tier.name} device...');
+
+    final genResult = await _cactusService.generateText(
+      userPrompt,
+      systemPrompt: systemPrompt,
+      maxTokens: 400,
+      temperature: 0.0,
+    );
+
+    if (genResult.isSuccess && genResult.text != null) {
+      print(
+          'Cactus: ${genResult.tokensGenerated} tokens in '
+          '${genResult.totalTimeMs}ms (${
+              genResult.tokensGenerated > 0 && genResult.totalTimeMs > 0
+                  ? (genResult.tokensGenerated / (genResult.totalTimeMs / 1000))
+                      .toStringAsFixed(1)
+                  : '?'
+          } tok/s)');
+      final parsed = _parseSummary(genResult.text!);
+      if (parsed != null) {
+        final def = parsed.definition;
+        return WordSummary(
+          definition: def,
+          mainSay: parsed.mainSay.isNotEmpty ? parsed.mainSay : def,
+          useCases: parsed.useCases,
+          similarWords: parsed.similarWords,
+          detailedSummary: parsed.detailedSummary,
+          generatedAt: parsed.generatedAt,
+        );
+      }
+    }
+
+    print('AIService: Cactus generation failed: ${genResult.message}');
     return null;
   }
 

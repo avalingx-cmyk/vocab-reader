@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
 import '../providers/settings_provider.dart';
 import '../providers/connectivity_provider.dart';
 import '../services/sync_service.dart';
 import '../services/ai_service.dart';
 import '../services/local_ai_service.dart';
+import '../services/cactus_local_service.dart';
 import '../services/device_capability.dart';
 import '../models/user_level.dart';
 import '../theme/app_theme.dart';
@@ -74,7 +76,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
         ? _openAIKeyController.text.trim()
         : _geminiKeyController.text.trim();
 
-    if (provider == 'local' || key.isEmpty) {
+    if (provider == 'local' || provider == 'cactus' || key.isEmpty) {
       setState(() {
         _isTesting = false;
         _testResult =
@@ -204,8 +206,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
           _buildCard(
             child: Column(
               children: [
-                _buildProviderTile(
-                    'Local AI Model',
+                _buildProviderTile('Local AI (llama.cpp)',
                     settings.aiProvider == 'local'
                         ? 'Offline-only, device CPU'
                         : 'Offline-only · ${_modelDisplayName(settings.localModelId)}',
@@ -216,6 +217,15 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
                   _buildLocalModelDropdown(settings.localModelId),
                 ],
                 const Divider(height: 1, indent: 16, endIndent: 16),
+                _buildProviderTile('Cactus AI (fast)',
+                    'ARM-optimized engine · 15-50 tok/s',
+                    'cactus',
+                    settings.aiProvider),
+                if (settings.aiProvider == 'cactus') ...[
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  _buildCactusModelDropdown(settings.cactusModelId),
+                ],
+                const Divider(height: 1, indent: 16, endIndent: 16),
                 _buildProviderTile('Google Gemini', 'gemini-1.5-flash',
                     'gemini', settings.aiProvider),
                 const Divider(height: 1, indent: 16, endIndent: 16),
@@ -224,6 +234,10 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
               ],
             ),
           ),
+          const SizedBox(height: 32),
+          _buildSectionHeader('MANAGE MODELS'),
+          const SizedBox(height: 12),
+          _buildModelManagementSection(),
           const SizedBox(height: 32),
           _buildSectionHeader('API KEYS'),
           const SizedBox(height: 12),
@@ -431,6 +445,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
   Widget _buildProviderTile(
       String name, String sub, String value, String current) {
     final bool isLocal = value == 'local';
+    final bool isCactus = value == 'cactus';
     final bool isLibAvailable =
         !isLocal || LocalAIService.isNativeLibraryAvailable();
 
@@ -482,7 +497,11 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
 
               if (v == 'local') {
                 final settings = ref.read(settingsProvider);
-                final currentId = settings.localModelId;
+                final validIds =
+                    LocalAIService.availableModels.map((m) => m.id).toSet();
+                final currentId = validIds.contains(settings.localModelId)
+                    ? settings.localModelId
+                    : LocalAIService.availableModels.first.id;
                 final isDownloaded =
                     await LocalAIService().isModelDownloaded(currentId);
 
@@ -498,6 +517,33 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
                   }
                   return;
                 }
+
+                if (currentId != settings.localModelId && mounted) {
+                  ref.read(settingsProvider.notifier).setLocalModelId(currentId);
+                }
+              }
+
+              if (v == 'cactus') {
+                final settings = ref.read(settingsProvider);
+                final cactusId = settings.cactusModelId;
+                final isDownloaded =
+                    await CactusLocalService().isModelDownloaded(cactusId);
+
+                if (!isDownloaded) {
+                  if (!mounted) return;
+                  final picked = await _showCactusModelPickerDialog();
+                  if (picked == null) return;
+                  final success =
+                      await _showCactusDownloadProgress(picked);
+                  if (success && mounted) {
+                    ref.read(settingsProvider.notifier).setCactusModelId(picked);
+                    ref.read(settingsProvider.notifier).setAIProvider(v);
+                  }
+                  return;
+                }
+
+                ref.read(settingsProvider.notifier).setAIProvider(v);
+                return;
               }
 
               ref.read(settingsProvider.notifier).setAIProvider(v);
@@ -507,6 +553,17 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
 
   Widget _buildLocalModelDropdown(String currentId) {
     final localAi = LocalAIService();
+    final validIds = LocalAIService.availableModels.map((m) => m.id).toSet();
+    final safeId = validIds.contains(currentId)
+        ? currentId
+        : LocalAIService.availableModels.first.id;
+    if (safeId != currentId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref
+            .read(settingsProvider.notifier)
+            .setLocalModelId(safeId);
+      });
+    }
     return Padding(
       padding: const EdgeInsets.only(left: 64, right: 24, bottom: 16),
       child: Column(
@@ -529,10 +586,10 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: currentId,
+                value: safeId,
                 isExpanded: true,
                 items: LocalAIService.availableModels.map((config) {
-                  final isActive = config.id == currentId;
+                  final isActive = config.id == safeId;
                   final unsuitable = !localAi.isModelSuitable(config.id);
                   return DropdownMenuItem(
                     value: config.id,
@@ -728,6 +785,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
   Future<bool> _showDownloadProgress(LocalModelConfig config) async {
     final progressNotifier = ValueNotifier<double>(0);
     final statusNotifier = ValueNotifier<String>('0%');
+    final cancelToken = CancelToken();
     bool success = false;
     String? errorMsg;
 
@@ -739,9 +797,12 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
           progressNotifier.value = p;
           statusNotifier.value = '${(p * 100).toStringAsFixed(1)}%';
         }
-      });
+      }, cancelToken: cancelToken);
       success = result.isSuccess;
       errorMsg = result.message;
+      if (result.message == 'Download cancelled') {
+        errorMsg = null;
+      }
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
     }
 
@@ -750,7 +811,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: Text('Downloading ${config.displayName}'),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         content: Column(
@@ -784,6 +845,274 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
                     color: AppTheme.primaryBlue),
               ),
             ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () {
+                cancelToken.cancel();
+              },
+              child: const Text('Cancel',
+                  style: TextStyle(color: Colors.redAccent)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (!success && errorMsg != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errorMsg!), backgroundColor: Colors.red),
+      );
+    }
+
+    return success;
+  }
+
+  Widget _buildCactusModelDropdown(String currentId) {
+    final cactus = CactusLocalService();
+    final safeId = CactusLocalService.availableModels
+            .any((m) => m.id == currentId)
+        ? currentId
+        : CactusLocalService.availableModels.first.id;
+    if (safeId != currentId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref
+            .read(settingsProvider.notifier)
+            .setCactusModelId(safeId);
+      });
+    }
+    return Padding(
+      padding: const EdgeInsets.only(left: 64, right: 24, bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Select Cactus Model',
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.primaryBlue),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color:
+                  Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: safeId,
+                isExpanded: true,
+                items: CactusLocalService.availableModels.map((config) {
+                  return DropdownMenuItem(
+                    value: config.id,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(child: Text(config.displayName,
+                            style: const TextStyle(fontSize: 14))),
+                        Text(
+                          config.sizeStr,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (v) async {
+                  if (v != null && v != currentId) {
+                    final isDownloaded =
+                        await CactusLocalService().isModelDownloaded(v);
+                    if (!isDownloaded) {
+                      final success =
+                          await _showCactusDownloadProgress(v);
+                      if (success && mounted) {
+                        ref
+                            .read(settingsProvider.notifier)
+                            .setCactusModelId(v);
+                      }
+                    } else {
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setCactusModelId(v);
+                    }
+                  }
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _showCactusModelPickerDialog() async {
+    final models = CactusLocalService.availableModels;
+    final dlStatus = <String, bool>{};
+    for (final m in models) {
+      dlStatus[m.id] = await CactusLocalService().isModelDownloaded(m.id);
+    }
+    String? selectedId = models.first.id;
+
+    return showDialog<String?>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Select Cactus Model to Download'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: models.map((config) {
+              final isDl = dlStatus[config.id] ?? false;
+              return Column(
+                children: [
+                  RadioListTile<String>(
+                    title: Row(
+                      children: [
+                        Expanded(
+                            child: Text(config.displayName,
+                                style: const TextStyle(fontSize: 14))),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isDl
+                                ? Colors.green.withOpacity(0.1)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            isDl ? 'Downloaded' : config.sizeStr,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: isDl
+                                  ? Colors.green
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    value: config.id,
+                    groupValue: selectedId,
+                    activeColor: AppTheme.primaryBlue,
+                    onChanged: (v) {
+                      setDialogState(() => selectedId = v);
+                    },
+                  ),
+                  if (config.id != models.last.id)
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                ],
+              );
+            }).toList(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, selectedId),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryBlue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text(
+                  (dlStatus[selectedId] ?? false) ? 'Select' : 'Download'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _showCactusDownloadProgress(String modelId) async {
+    final config = CactusLocalService().getModelConfig(modelId);
+    final progressNotifier = ValueNotifier<double>(0);
+    final statusNotifier = ValueNotifier<String>('Starting...');
+    final cancelToken = CancelToken();
+    bool success = false;
+    String? errorMsg;
+
+    download() async {
+      final result = await CactusLocalService().downloadModel(
+        modelId,
+        (count, total) {
+          if (total > 0) {
+            final p = count / total;
+            progressNotifier.value = p;
+            statusNotifier.value = '${(p * 100).toStringAsFixed(1)}%';
+          }
+        },
+        cancelToken: cancelToken,
+      );
+      success = result.isSuccess;
+      errorMsg = result.message;
+      if (result.message == 'Download cancelled') {
+        errorMsg = null;
+      }
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    download();
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text('Downloading ${config.displayName}'),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Downloading weights (${config.sizeStr}). Keep app open.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 24),
+            ValueListenableBuilder<double>(
+              valueListenable: progressNotifier,
+              builder: (context, value, child) => LinearProgressIndicator(
+                value: value > 0 ? value : null,
+                backgroundColor: AppTheme.primaryBlue.withOpacity(0.1),
+                valueColor:
+                    const AlwaysStoppedAnimation<Color>(AppTheme.primaryBlue),
+                minHeight: 8,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ValueListenableBuilder<String>(
+              valueListenable: statusNotifier,
+              builder: (context, value, child) => Text(
+                value,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: AppTheme.primaryBlue),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () {
+                cancelToken.cancel();
+              },
+              child: const Text('Cancel',
+                  style: TextStyle(color: Colors.redAccent)),
+            ),
           ],
         ),
       ),
@@ -799,8 +1128,129 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
   }
 
   String _modelDisplayName(String modelId) {
-    final config = LocalAIService.availableModels.where((m) => m.id == modelId);
-    return config.isNotEmpty ? config.first.displayName : modelId;
+    final llamaConfig = LocalAIService.availableModels
+        .where((m) => m.id == modelId);
+    if (llamaConfig.isNotEmpty) return llamaConfig.first.displayName;
+    final cactusConfig = CactusLocalService.availableModels
+        .where((m) => m.id == modelId);
+    if (cactusConfig.isNotEmpty) return cactusConfig.first.displayName;
+    return modelId;
+  }
+
+  Widget _buildModelManagementSection() {
+    final localModels = LocalAIService.availableModels;
+    final cactusModels = CactusLocalService.availableModels;
+    return Consumer(builder: (context, ref, child) {
+      final settings = ref.watch(settingsProvider);
+      final allConfigs = [
+        ...localModels.map((m) => _ModelInfo(
+            id: m.id,
+            displayName: m.displayName,
+            sizeStr: m.sizeStr,
+            provider: 'local',
+            isActive: settings.localModelId == m.id &&
+                settings.aiProvider == 'local')),
+        ...cactusModels.map((m) => _ModelInfo(
+            id: m.id,
+            displayName: m.displayName,
+            sizeStr: m.sizeStr,
+            provider: 'cactus',
+            isActive: settings.cactusModelId == m.id &&
+                settings.aiProvider == 'cactus')),
+      ];
+      return _buildCard(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final info in allConfigs)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    if (info.isActive)
+                      const Icon(Icons.check_circle,
+                          size: 16, color: Colors.green),
+                    if (!info.isActive)
+                      const SizedBox(width: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(info.displayName,
+                              style: const TextStyle(fontSize: 14)),
+                          Text('${info.sizeStr} · ${info.provider == 'local' ? 'llama.cpp' : 'Cactus'}',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant)),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, size: 20),
+                      color: Colors.redAccent,
+                      tooltip: 'Delete downloaded model',
+                      onPressed: () => _deleteModelDialog(info),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
+    });
+  }
+
+  Future<void> _deleteModelDialog(_ModelInfo info) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete ${info.displayName}?'),
+        content: Text(
+            'This will permanently delete the downloaded model files (${info.sizeStr}).'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete',
+                style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final settings = ref.read(settingsProvider);
+    bool deleted;
+    if (info.provider == 'local') {
+      deleted = await LocalAIService().deleteModel(info.id);
+      if (info.id == settings.localModelId && mounted) {
+        ref.read(settingsProvider.notifier).setLocalModelId(
+            LocalAIService.availableModels.first.id);
+      }
+    } else {
+      deleted =
+          await CactusLocalService().deleteModel(info.id);
+      if (info.id == settings.cactusModelId && mounted) {
+        ref.read(settingsProvider.notifier).setCactusModelId(
+            CactusLocalService.availableModels.first.id);
+      }
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(deleted
+              ? '${info.displayName} deleted'
+              : 'Model not found on disk'),
+        ),
+      );
+    }
   }
 
   Widget _buildKeyField(
@@ -826,4 +1276,19 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
       ),
     );
   }
+}
+
+class _ModelInfo {
+  final String id;
+  final String displayName;
+  final String sizeStr;
+  final String provider;
+  final bool isActive;
+  const _ModelInfo({
+    required this.id,
+    required this.displayName,
+    required this.sizeStr,
+    required this.provider,
+    required this.isActive,
+  });
 }

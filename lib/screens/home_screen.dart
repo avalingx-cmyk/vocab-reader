@@ -307,14 +307,37 @@ class _SyncButton extends StatelessWidget {
         final syncing = snapshot.data == SyncStatus.syncing ||
             SyncService.instance.isSyncing;
         if (syncing) {
-          return const Padding(
-            padding: EdgeInsets.all(12.0),
-            child: SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: AppTheme.primaryBlue),
-            ),
+          return StreamBuilder<SyncProgress>(
+            stream: SyncService.instance.syncProgressStream,
+            builder: (context, progressSnapshot) {
+              final progress = progressSnapshot.data;
+              final label = progress != null && progress.total > 0
+                  ? '${progress.processed}/${progress.total}'
+                  : '';
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppTheme.primaryBlue),
+                    ),
+                    if (label.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Text(label,
+                          style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.primaryBlue)),
+                    ],
+                  ],
+                ),
+              );
+            },
           );
         }
         return IconButton(
