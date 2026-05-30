@@ -36,7 +36,6 @@ dependencies:
   shimmer: ^3.0.0
   
   # AI
-  llama_cpp_dart: ^0.2.2
   path_provider: ^2.1.2
   archive: ^4.0.9
 

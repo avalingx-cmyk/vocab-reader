@@ -2,19 +2,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../game/quiz_engine.dart';
 import '../models/word.dart';
 import '../services/database_service.dart';
+import '../services/adaptive_quiz_service.dart';
 import '../providers/word_provider.dart';
+import 'settings_provider.dart';
 
 class QuizState {
   final QuizSession? session;
   final AnswerState lastAnswerState;
   final bool showingAnswer;
   final bool isComplete;
+  final bool isGenerating;
+  final bool usedAiSession;
+  final String? generationNotice;
 
   const QuizState({
     this.session,
     this.lastAnswerState = AnswerState.unanswered,
     this.showingAnswer = false,
     this.isComplete = false,
+    this.isGenerating = false,
+    this.usedAiSession = false,
+    this.generationNotice,
   });
 
   QuizState copyWith({
@@ -22,12 +30,18 @@ class QuizState {
     AnswerState? lastAnswerState,
     bool? showingAnswer,
     bool? isComplete,
+    bool? isGenerating,
+    bool? usedAiSession,
+    String? generationNotice,
   }) {
     return QuizState(
       session: session ?? this.session,
       lastAnswerState: lastAnswerState ?? this.lastAnswerState,
       showingAnswer: showingAnswer ?? this.showingAnswer,
       isComplete: isComplete ?? this.isComplete,
+      isGenerating: isGenerating ?? this.isGenerating,
+      usedAiSession: usedAiSession ?? this.usedAiSession,
+      generationNotice: generationNotice,
     );
   }
 }
@@ -56,22 +70,45 @@ class ReviewStats {
 
 class QuizNotifier extends StateNotifier<QuizState> {
   final List<Word> _allWords;
+  final SettingsState _settings;
+  final AdaptiveQuizService _adaptiveQuizService;
 
-  QuizNotifier(this._allWords) : super(const QuizState());
+  QuizNotifier(this._allWords, this._settings, this._adaptiveQuizService)
+      : super(const QuizState());
 
-  void startSession({QuizMode? mode, List<Word>? dueWords}) {
+  Future<void> startSession({QuizMode? mode, List<Word>? dueWords}) async {
     final pool = dueWords ?? _allWords;
     final effectiveMode = mode ?? QuizMode.flashcard;
-    final session = QuizEngine.buildSession(
-      allWords: pool,
-      mode: effectiveMode,
-      sessionSize: effectiveMode == QuizMode.speedRound ? 10 : 8,
-    );
-    state = QuizState(
-      session: session,
+    final sessionSize = effectiveMode == QuizMode.speedRound ? 10 : 8;
+
+    state = state.copyWith(
+      isGenerating:
+          effectiveMode == QuizMode.multipleChoice ||
+          effectiveMode == QuizMode.speedRound,
+      generationNotice: null,
       lastAnswerState: AnswerState.unanswered,
       showingAnswer: false,
       isComplete: false,
+    );
+
+    final result = await _adaptiveQuizService.buildSession(
+      allWords: pool,
+      mode: effectiveMode,
+      sessionSize: sessionSize,
+      provider: _settings.aiProvider,
+      localModelId: _settings.cactusModelId,
+      openAIKey: _settings.openAIKey,
+      geminiKey: _settings.geminiKey,
+    );
+
+    state = QuizState(
+      session: result.session,
+      lastAnswerState: AnswerState.unanswered,
+      showingAnswer: false,
+      isComplete: false,
+      isGenerating: false,
+      usedAiSession: result.source == QuizSessionSource.ai,
+      generationNotice: result.notice,
     );
   }
 
@@ -139,7 +176,13 @@ final quizProvider =
     StateNotifierProvider.autoDispose<QuizNotifier, QuizState>((ref) {
   final wordsAsync = ref.watch(wordListProvider(null));
   final words = wordsAsync.value ?? [];
-  return QuizNotifier(words);
+  final settings = ref.watch(settingsProvider);
+  final adaptiveQuizService = ref.watch(adaptiveQuizServiceProvider);
+  return QuizNotifier(words, settings, adaptiveQuizService);
+});
+
+final adaptiveQuizServiceProvider = Provider<AdaptiveQuizService>((ref) {
+  return AdaptiveQuizService();
 });
 
 final dueWordsProvider = Provider<List<Word>>((ref) {

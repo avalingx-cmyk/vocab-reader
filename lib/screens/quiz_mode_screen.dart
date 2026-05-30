@@ -101,6 +101,31 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
       }
     });
 
+    if (quizState.isGenerating) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(_modeTitle(widget.mode)),
+          backgroundColor: Colors.transparent,
+        ),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 20),
+                Text(
+                  'Generating quiz...',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (session == null) {
       return Scaffold(
         appBar: AppBar(title: Text(_modeTitle(widget.mode)), backgroundColor: Colors.transparent),
@@ -184,6 +209,28 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
               ],
             ),
           ),
+          if (quizState.generationNotice != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surfaceContainerHighest
+                      .withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  quizState.generationNotice!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
           Expanded(
             child: _ShakeWidget(
               key: _shakeKey,
@@ -489,7 +536,9 @@ class _MultipleChoiceMode extends StatelessWidget {
             ),
             child: Column(children: [
               Text(
-                'What does this word mean?',
+                question.questionLabel.isEmpty
+                    ? 'What does this word mean?'
+                    : question.questionLabel,
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -499,7 +548,9 @@ class _MultipleChoiceMode extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                question.word.text,
+                question.questionText.isEmpty
+                    ? question.word.text
+                    : question.questionText,
                 style: TextStyle(
                   fontSize: 32, fontWeight: FontWeight.bold, color: color,
                 ),
@@ -516,6 +567,21 @@ class _MultipleChoiceMode extends StatelessWidget {
                 color: color,
                 onTap: submitted ? null : () => onAnswer(opt),
               )),
+          if (submitted && question.explanation != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                'Why: ${question.explanation!}',
+                style: const TextStyle(fontSize: 14, height: 1.4),
+              ),
+            ),
+          ],
         ],
       ),
     );

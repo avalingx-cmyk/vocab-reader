@@ -78,54 +78,16 @@ class CactusLocalService {
   String? _currentModelId;
   bool _isGenerating = false;
 
+  static const String defaultModelId = 'qwen3-0.6b';
+
   static const List<CactusModelConfig> availableModels = [
     CactusModelConfig(
-      id: 'gemma-270m',
-      displayName: 'Gemma 3 (270M) ⚡',
-      sizeStr: '~240 MB',
-      repoId: 'Cactus-Compute/gemma-3-270m-it',
-      sizeBytes: 234881024,
-      zipFilename: 'gemma-3-270m-it-int4.zip',
-    ),
-    CactusModelConfig(
-      id: 'lfm-350m',
-      displayName: 'LFM 2.5 (350M)',
-      sizeStr: '~209 MB',
-      repoId: 'Cactus-Compute/LFM2.5-350M',
-      sizeBytes: 219152384,
-      zipFilename: 'lfm2.5-350m-int4.zip',
-    ),
-    CactusModelConfig(
-      id: 'qwen3-0.6b',
+      id: defaultModelId,
       displayName: 'Qwen3 (0.6B)',
       sizeStr: '~376 MB',
       repoId: 'Cactus-Compute/Qwen3-0.6B',
       sizeBytes: 394264576,
       zipFilename: 'qwen3-0.6b-int4.zip',
-    ),
-    CactusModelConfig(
-      id: 'gemma-1b',
-      displayName: 'Gemma 3 (1B)',
-      sizeStr: '~653 MB',
-      repoId: 'Cactus-Compute/gemma-3-1b-it',
-      sizeBytes: 684510208,
-      zipFilename: 'gemma-3-1b-it-int4.zip',
-    ),
-    CactusModelConfig(
-      id: 'lfm-1.2b',
-      displayName: 'LFM 2.5 (1.2B)',
-      sizeStr: '~643 MB',
-      repoId: 'Cactus-Compute/LFM2.5-1.2B-Instruct',
-      sizeBytes: 674234368,
-      zipFilename: 'lfm2.5-1.2b-instruct-int4.zip',
-    ),
-    CactusModelConfig(
-      id: 'qwen3-1.7b',
-      displayName: 'Qwen3 (1.7B)',
-      sizeStr: '~1.01 GB',
-      repoId: 'Cactus-Compute/Qwen3-1.7B',
-      sizeBytes: 1084456960,
-      zipFilename: 'qwen3-1.7b-int4.zip',
     ),
   ];
 

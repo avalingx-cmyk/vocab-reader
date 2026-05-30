@@ -4,7 +4,6 @@ import 'dart:math';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../services/database_service.dart';
 import '../services/ai_service.dart';
-import 'local_ai_service.dart';
 import 'cactus_local_service.dart';
 import '../models/user_level.dart';
 import '../models/word.dart';
@@ -13,15 +12,7 @@ import '../providers/connectivity_provider.dart';
 
 enum SyncStatus { idle, syncing, completed, error }
 
-enum SyncError {
-  none,
-  notConfigured,
-  localLibUnavailable,
-  localModelMissing,
-  localAiFailed,
-  networkError,
-  unknown
-}
+enum SyncError { none, notConfigured, localModelMissing, networkError, unknown }
 
 class SyncProgress {
   final int processed;
@@ -60,10 +51,6 @@ class SyncService {
   void cancelSync() {
     if (_isSyncing) {
       _isCancelled = true;
-      final localAi = LocalAIService();
-      if (localAi.isGenerating) {
-        localAi.cancelGeneration();
-      }
       final cactus = CactusLocalService();
       if (cactus.isGenerating) {
         cactus.cancelGeneration();
@@ -86,11 +73,9 @@ class SyncService {
       lastError = SyncError.none;
       final provider =
           await DatabaseService.instance.getSetting('ai_provider') ?? 'gemini';
-      final localModelId = provider == 'cactus'
-          ? await DatabaseService.instance.getSetting('cactus_model_id') ??
-              CactusLocalService.availableModels.first.id
-          : await DatabaseService.instance.getSetting('local_model_id') ??
-              LocalAIService.availableModels.first.id;
+      final localModelId =
+          await DatabaseService.instance.getSetting('cactus_model_id') ??
+              CactusLocalService.defaultModelId;
       print(
           'SyncService: Starting sync with provider=$provider localModel=$localModelId');
 
@@ -105,35 +90,6 @@ class SyncService {
         return;
       }
 
-      // Check if local model is needed but missing or lib unavailable
-      if (provider == 'local') {
-        if (!LocalAIService.isNativeLibraryAvailable()) {
-          print(
-              'SyncService: Native Llama library not available in this build. Use Cactus, Gemini or OpenAI instead.');
-          lastError = SyncError.localLibUnavailable;
-          _statusCtrl.add(SyncStatus.error);
-          return;
-        }
-
-        final modelPath = await LocalAIService().getModelPath(localModelId);
-        final modelFile = File(modelPath);
-        if (!await modelFile.exists()) {
-          print('SyncService: Model file not found at $modelPath. '
-              'Go to Settings > AI Provider to download it.');
-          lastError = SyncError.localModelMissing;
-          _statusCtrl.add(SyncStatus.error);
-          return;
-        }
-        final modelSize = await modelFile.length();
-        if (modelSize < 100 * 1024 * 1024) {
-          print('SyncService: Model file at $modelPath is incomplete '
-              '(${(modelSize / 1048576).toStringAsFixed(1)} MB). Delete it and re-download from Settings.');
-          lastError = SyncError.localModelMissing;
-          _statusCtrl.add(SyncStatus.error);
-          return;
-        }
-      }
-
       if (provider == 'cactus') {
         final modelPath = await CactusLocalService().getModelPath(localModelId);
         final modelDir = Directory(modelPath);
@@ -145,6 +101,8 @@ class SyncService {
           return;
         }
       }
+
+      await _prewarmSelectedModel(provider, localModelId);
 
       if (!aiService.isConfigured) {
         print('SyncService: AIService is not configured. Aborting.');
@@ -193,8 +151,8 @@ class SyncService {
           final wordId = item['word_id'] as String;
           final retryCount = (item['retry_count'] as int?) ?? 0;
 
-          _progressCtrl
-              .add(SyncProgress(processed: processedCount, total: queue.length));
+          _progressCtrl.add(
+              SyncProgress(processed: processedCount, total: queue.length));
           await Future.delayed(Duration.zero);
 
           try {
@@ -210,8 +168,8 @@ class SyncService {
             passFailCount++;
           }
 
-          _progressCtrl
-              .add(SyncProgress(processed: processedCount, total: queue.length));
+          _progressCtrl.add(
+              SyncProgress(processed: processedCount, total: queue.length));
           await Future.delayed(Duration.zero);
         }
 
@@ -232,12 +190,12 @@ class SyncService {
       if (_isCancelled) {
         print('SyncService: Sync was cancelled by user.');
         _statusCtrl.add(SyncStatus.idle);
-      } else if (totalFailCount > 0 && provider == 'local') {
-        lastError = SyncError.localAiFailed;
+      } else if (totalFailCount > 0 && provider == 'cactus') {
+        lastError = SyncError.localModelMissing;
         lastErrorMessage = '$totalFailCount word(s) failed to generate. '
-            'The local model may have produced unparseable output. '
+            'The Cactus model may have produced invalid output. '
             'Check logs or try Gemini/OpenAI.';
-        print('SyncService: $totalFailCount local AI item(s) failed.');
+        print('SyncService: $totalFailCount Cactus item(s) failed.');
       }
 
       print(
@@ -246,13 +204,7 @@ class SyncService {
     } catch (e) {
       print('SyncService: Fatal error: $e');
       final errStr = e.toString();
-      if (errStr.contains('NotInitialized') ||
-          errStr.contains('libmtmd') ||
-          errStr.contains('llama') ||
-          errStr.contains('DynamicLibrary')) {
-        lastError = SyncError.localLibUnavailable;
-      } else if (errStr.contains('Connection') ||
-          errStr.contains('SocketException')) {
+      if (errStr.contains('Connection') || errStr.contains('SocketException')) {
         lastError = SyncError.networkError;
       } else {
         lastError = SyncError.unknown;
@@ -294,11 +246,9 @@ class SyncService {
   Future<AIService> _buildAIService() async {
     final provider =
         await DatabaseService.instance.getSetting('ai_provider') ?? 'gemini';
-    final localModel = provider == 'cactus'
-        ? await DatabaseService.instance.getSetting('cactus_model_id') ??
-            CactusLocalService.availableModels.first.id
-        : await DatabaseService.instance.getSetting('local_model_id') ??
-            LocalAIService.availableModels.first.id;
+    final localModel =
+        await DatabaseService.instance.getSetting('cactus_model_id') ??
+            CactusLocalService.defaultModelId;
     // Key names must match what settings_provider.dart uses to save them
     String? openAIKey = await DatabaseService.instance.getSetting('openai_key');
     String? geminiKey = await DatabaseService.instance.getSetting('gemini_key');
@@ -361,7 +311,7 @@ class SyncService {
 
     print('SyncService: Requesting summary for "${word.text}"...');
     final isLocal =
-        await DatabaseService.instance.getSetting('ai_provider') == 'local';
+        await DatabaseService.instance.getSetting('ai_provider') == 'cactus';
     final summary = await aiService.generateSummary(
       word: word.text,
       context: word.context,
@@ -401,6 +351,17 @@ class SyncService {
     _progressCtrl.close();
   }
 
+  Future<void> _prewarmSelectedModel(String provider, String modelId) async {
+    if (provider == 'cactus') {
+      final result = await CactusLocalService().initialize(modelId);
+      if (!result.isSuccess) {
+        print('SyncService: Cactus prewarm skipped: ${result.message}');
+      } else {
+        print('SyncService: Cactus model prewarmed: $modelId');
+      }
+    }
+  }
+
   Future<WordSummary> _withLibrarySimilarWords(
     Word word,
     WordSummary summary,
@@ -421,9 +382,8 @@ class SyncService {
         ...?existingSummary?.similarWords,
       ].join(' ').toLowerCase();
 
-      final generatedSimilar = summary.similarWords
-          .map((item) => item.toLowerCase())
-          .toSet();
+      final generatedSimilar =
+          summary.similarWords.map((item) => item.toLowerCase()).toSet();
       if (generatedSimilar.contains(text.toLowerCase()) ||
           summary.definition.toLowerCase().contains(text.toLowerCase()) ||
           haystack.contains(current)) {
@@ -435,7 +395,9 @@ class SyncService {
     final seen = <String>{};
     for (final item in [...candidates, ...summary.similarWords]) {
       final normalized = item.trim().toLowerCase();
-      if (normalized.isEmpty || normalized == current || seen.contains(normalized)) {
+      if (normalized.isEmpty ||
+          normalized == current ||
+          seen.contains(normalized)) {
         continue;
       }
       seen.add(normalized);

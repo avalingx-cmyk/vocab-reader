@@ -11,7 +11,6 @@ import 'books_screen.dart';
 import 'quiz_screen.dart';
 import 'review_screen.dart';
 import 'settings_screen.dart';
-import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
 
 final navIndexProvider = StateProvider<int>((ref) => 0);
@@ -45,20 +44,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             case SyncError.notConfigured:
               msg = 'AI not configured. Add an API key in Settings.';
               break;
-            case SyncError.localLibUnavailable:
-              msg =
-                  'Local AI engine missing in this build. Please use Gemini or OpenAI in Settings.';
-              break;
             case SyncError.localModelMissing:
-              msg =
-                  'Local AI model not downloaded. Go to Settings to download it.';
+              msg = errMsg ??
+                  'Cactus model unavailable or generation failed. Check Settings.';
               break;
             case SyncError.networkError:
               msg = 'Network error. Please check your internet connection.';
-              break;
-            case SyncError.localAiFailed:
-              msg = errMsg ??
-                  'Local AI generation failed for some words. Check logs.';
               break;
             case SyncError.unknown:
             default:
@@ -333,8 +324,7 @@ class _SyncButton extends StatelessWidget {
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppTheme.primaryBlue),
+                          strokeWidth: 2, color: AppTheme.primaryBlue),
                     ),
                     if (label.isNotEmpty) ...[
                       const SizedBox(width: 6),
@@ -465,19 +455,15 @@ class _DashboardHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider);
-    final int weeklyGoal = settings.weeklyGoal;
     final int wordsCount = words.length;
     final int booksCount = words.map((w) => w.bookName).toSet().length;
-    final weekAgo = DateTime.now().subtract(const Duration(days: 7));
-    final int newThisWeek = words.where((w) => w.createdAt.isAfter(weekAgo)).length;
     final int dueToday = words
         .where((w) =>
             w.summary != null &&
-            (w.nextReviewAt == null || !w.nextReviewAt!.isAfter(DateTime.now())))
+            (w.nextReviewAt == null ||
+                !w.nextReviewAt!.isAfter(DateTime.now())))
         .length;
     final int mastered = words.where((w) => w.successCount >= 4).length;
-    final double progress = (weeklyGoal > 0) ? newThisWeek / weeklyGoal : 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -544,8 +530,6 @@ class _DashboardHeader extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 20),
-        _buildMomentumCard(context, newThisWeek, weeklyGoal, progress),
-        const SizedBox(height: 16),
         _buildWeeklyActivityChart(context, words),
         const SizedBox(height: 32),
         Text(
@@ -567,29 +551,12 @@ class _DashboardHeader extends ConsumerWidget {
     IconData icon,
     Color color,
   ) {
-    return Container(
+    return _DashboardSurfaceCard(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Theme.of(context).shadowColor.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      borderRadius: 20,
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, size: 18, color: color),
-          ),
+          _DashboardIconChip(icon: icon, color: color),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -617,18 +584,8 @@ class _DashboardHeader extends ConsumerWidget {
 
   Widget _buildExpandableCart(BuildContext context, String title, String value,
       IconData icon, Color color, String submenuText, VoidCallback onTap) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+    return _DashboardSurfaceCard(
+      borderRadius: 24,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: Material(
@@ -640,14 +597,7 @@ class _DashboardHeader extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, color: color, size: 20),
-                  ),
+                  _DashboardIconChip(icon: icon, color: color),
                   const SizedBox(height: 16),
                   Text(
                     value,
@@ -689,120 +639,37 @@ class _DashboardHeader extends ConsumerWidget {
     );
   }
 
-  Widget _buildMomentumCard(
-      BuildContext context, int current, int goal, double progress) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppTheme.primaryBlue,
-            AppTheme.primaryBlue.withValues(alpha: 0.8)
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryBlue.withValues(alpha: 0.3),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.local_fire_department_rounded,
-                    color: Colors.white, size: 20),
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                'Keep the momentum!',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            "You've learned $current new words this week. Reach your goal of $goal to unlock the 'Polyglot' badge.",
-            style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.9),
-                fontSize: 14,
-                height: 1.4),
-          ),
-          const SizedBox(height: 20),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: LinearProgressIndicator(
-              value: progress,
-              backgroundColor: Colors.white.withValues(alpha: 0.2),
-              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-              minHeight: 8,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${(progress * 100).toInt()}% of weekly goal reached',
-            style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.8),
-                fontSize: 12,
-                fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildWeeklyActivityChart(BuildContext context, List<Word> words) {
     final today = DateTime.now();
     final createdCounts = List<int>.filled(7, 0);
     final reviewedCounts = List<int>.filled(7, 0);
 
     for (final word in words) {
-      final createdDiff =
-          today.difference(DateTime(word.createdAt.year, word.createdAt.month, word.createdAt.day)).inDays;
+      final createdDiff = today
+          .difference(DateTime(
+              word.createdAt.year, word.createdAt.month, word.createdAt.day))
+          .inDays;
       if (createdDiff >= 0 && createdDiff < 7) {
         createdCounts[6 - createdDiff]++;
       }
       if (word.lastReviewedAt != null) {
         final reviewed = word.lastReviewedAt!;
-        final reviewedDiff =
-            today.difference(DateTime(reviewed.year, reviewed.month, reviewed.day)).inDays;
+        final reviewedDiff = today
+            .difference(DateTime(reviewed.year, reviewed.month, reviewed.day))
+            .inDays;
         if (reviewedDiff >= 0 && reviewedDiff < 7) {
           reviewedCounts[6 - reviewedDiff]++;
         }
       }
     }
 
-    final maxValue = [...createdCounts, ...reviewedCounts].fold<int>(1, (a, b) => a > b ? a : b);
+    final maxValue = [...createdCounts, ...reviewedCounts]
+        .fold<int>(1, (a, b) => a > b ? a : b);
     const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-    return Container(
+    return _DashboardSurfaceCard(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      borderRadius: 24,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -841,7 +708,9 @@ class _DashboardHeader extends ConsumerWidget {
                               children: [
                                 Flexible(
                                   child: FractionallySizedBox(
-                                    heightFactor: createdFactor == 0 ? 0.04 : createdFactor,
+                                    heightFactor: createdFactor == 0
+                                        ? 0.04
+                                        : createdFactor,
                                     child: Container(
                                       width: 10,
                                       decoration: BoxDecoration(
@@ -854,7 +723,9 @@ class _DashboardHeader extends ConsumerWidget {
                                 const SizedBox(width: 3),
                                 Flexible(
                                   child: FractionallySizedBox(
-                                    heightFactor: reviewedFactor == 0 ? 0.04 : reviewedFactor,
+                                    heightFactor: reviewedFactor == 0
+                                        ? 0.04
+                                        : reviewedFactor,
                                     child: Container(
                                       width: 10,
                                       decoration: BoxDecoration(
@@ -872,7 +743,9 @@ class _DashboardHeader extends ConsumerWidget {
                         Text(labels[i],
                             style: TextStyle(
                               fontSize: 11,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
                             )),
                       ],
                     ),
@@ -977,6 +850,59 @@ class _WordCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _DashboardSurfaceCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final double borderRadius;
+
+  const _DashboardSurfaceCard({
+    required this.child,
+    this.padding = EdgeInsets.zero,
+    this.borderRadius = 24,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(borderRadius),
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+class _DashboardIconChip extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+
+  const _DashboardIconChip({
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(icon, size: 18, color: color),
     );
   }
 }

@@ -15,12 +15,22 @@ class QuizQuestion {
   final QuizMode mode;
   final List<String> options; // for MCQ / speed round
   final String correctAnswer;
+  final String questionLabel;
+  final String questionText;
+  final String? explanation;
+  final String? difficultyTag;
+  final bool isAiGenerated;
 
   const QuizQuestion({
     required this.word,
     required this.mode,
     required this.options,
     required this.correctAnswer,
+    this.questionLabel = '',
+    this.questionText = '',
+    this.explanation,
+    this.difficultyTag,
+    this.isAiGenerated = false,
   });
 }
 
@@ -128,6 +138,7 @@ class QuizEngine {
           mode: mode,
           options: const [],
           correctAnswer: definition,
+          questionText: word.text,
         );
 
       case QuizMode.multipleChoice:
@@ -144,6 +155,8 @@ class QuizEngine {
           mode: mode,
           options: options,
           correctAnswer: definition,
+          questionLabel: 'What does this word mean?',
+          questionText: word.text,
         );
 
       case QuizMode.spellingBee:
@@ -152,6 +165,7 @@ class QuizEngine {
           mode: mode,
           options: const [],
           correctAnswer: word.text,
+          questionText: word.summary!.definition,
         );
     }
   }
