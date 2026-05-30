@@ -33,6 +33,7 @@ class QuizSession {
   int streak = 0;
   int bestStreak = 0;
   final List<Word> missedWords = [];
+  final List<Word> correctWords = [];
   final List<AnswerState> answerStates;
 
   QuizSession({required this.questions, required this.mode})
@@ -59,6 +60,7 @@ class QuizSession {
     if (isCorrect) {
       score++;
       streak++;
+      correctWords.add(q.word);
       if (streak > bestStreak) bestStreak = streak;
     } else {
       streak = 0;
@@ -77,6 +79,7 @@ class QuizSession {
     if (known) {
       score++;
       streak++;
+      correctWords.add(q.word);
       if (streak > bestStreak) bestStreak = streak;
     } else {
       streak = 0;

@@ -8,7 +8,6 @@ import '../services/ai_service.dart';
 import '../services/local_ai_service.dart';
 import '../services/cactus_local_service.dart';
 import '../services/device_capability.dart';
-import '../models/user_level.dart';
 import '../theme/app_theme.dart';
 import '../providers/theme_provider.dart';
 
@@ -185,16 +184,6 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
                       color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(height: 32),
-          _buildSectionHeader('YOUR LEVEL'),
-          const SizedBox(height: 12),
-          _buildCard(
-            child: Column(
-              children: UserLevel.values
-                  .map((level) => _buildLevelTile(level, settings.userLevel))
-                  .toList(),
             ),
           ),
           const SizedBox(height: 32),
@@ -420,24 +409,6 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       onChanged: (v) {
         if (v != null) ref.read(themeModeProvider.notifier).setTheme(v);
-      },
-    );
-  }
-
-  Widget _buildLevelTile(UserLevel level, UserLevel current) {
-    return RadioListTile<UserLevel>(
-      title: Text(level.displayName,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-      subtitle: Text(level.description,
-          style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant)),
-      value: level,
-      groupValue: current,
-      activeColor: AppTheme.primaryBlue,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      onChanged: (v) {
-        if (v != null) ref.read(settingsProvider.notifier).setUserLevel(v);
       },
     );
   }
@@ -1158,50 +1129,83 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
             isActive: settings.cactusModelId == m.id &&
                 settings.aiProvider == 'cactus')),
       ];
-      return _buildCard(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final info in allConfigs)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    if (info.isActive)
-                      const Icon(Icons.check_circle,
-                          size: 16, color: Colors.green),
-                    if (!info.isActive)
-                      const SizedBox(width: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+      return FutureBuilder<Set<String>>(
+        future: _getDownloadedModelIds(),
+        builder: (context, snapshot) {
+          final downloadedIds = snapshot.data ?? {};
+          return _buildCard(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final info in allConfigs) ...[
+                  if (downloadedIds.contains('${info.provider}:${info.id}'))
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
                         children: [
-                          Text(info.displayName,
-                              style: const TextStyle(fontSize: 14)),
-                          Text('${info.sizeStr} · ${info.provider == 'local' ? 'llama.cpp' : 'Cactus'}',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant)),
+                          if (info.isActive)
+                            const Icon(Icons.check_circle,
+                                size: 16, color: Colors.green),
+                          if (!info.isActive)
+                            const SizedBox(width: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(info.displayName,
+                                    style: const TextStyle(fontSize: 14)),
+                                Text('${info.sizeStr} · ${info.provider == 'local' ? 'llama.cpp' : 'Cactus'}',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant)),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, size: 20),
+                            color: Colors.redAccent,
+                            tooltip: 'Delete downloaded model',
+                            onPressed: () => _deleteModelDialog(info),
+                          ),
                         ],
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline, size: 20),
-                      color: Colors.redAccent,
-                      tooltip: 'Delete downloaded model',
-                      onPressed: () => _deleteModelDialog(info),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
+                ],
+                if (downloadedIds.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text('No models downloaded yet.',
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant)),
+                  ),
+              ],
+            ),
+          );
+        },
       );
     });
+  }
+
+  Future<Set<String>> _getDownloadedModelIds() async {
+    final ids = <String>{};
+    for (final m in LocalAIService.availableModels) {
+      if (await LocalAIService().isModelDownloaded(m.id)) {
+        ids.add('local:${m.id}');
+      }
+    }
+    for (final m in CactusLocalService.availableModels) {
+      if (await CactusLocalService().isModelDownloaded(m.id)) {
+        ids.add('cactus:${m.id}');
+      }
+    }
+    return ids;
   }
 
   Future<void> _deleteModelDialog(_ModelInfo info) async {

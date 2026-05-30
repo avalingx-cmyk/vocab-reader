@@ -19,13 +19,13 @@ class AIService {
   String? _openAIKey;
   String? _geminiKey;
   String _provider = 'gemini';
-  String _localModelId = 'qwen';
+  String? _localModelId;
 
   void configure({
     String? openAIKey,
     String? geminiKey,
     String provider = 'gemini',
-    String localModelId = 'qwen',
+    String? localModelId,
   }) {
     _openAIKey = openAIKey?.trim().isEmpty ?? true ? null : openAIKey!.trim();
     _geminiKey = geminiKey?.trim().isEmpty ?? true ? null : geminiKey!.trim();
@@ -37,8 +37,11 @@ class AIService {
     _dio.options.connectTimeout = const Duration(seconds: 10);
     _dio.options.receiveTimeout = const Duration(seconds: 30);
 
-    if (provider == 'local' && !_localAiService.isInitialized) {
-      _localAiService.initialize(_localModelId);
+    final selectedModelId = _localModelId;
+    if (provider == 'local' &&
+        selectedModelId != null &&
+        !_localAiService.isInitialized) {
+      _localAiService.initialize(selectedModelId);
     }
   }
 
@@ -88,7 +91,12 @@ class AIService {
     UserLevel level, {
     bool keepAlive = false,
   }) async {
-    final initResult = await _localAiService.initialize(_localModelId);
+    final modelId = _localModelId;
+    if (modelId == null) {
+      print('AIService: Local model not selected.');
+      return null;
+    }
+    final initResult = await _localAiService.initialize(modelId);
     if (!initResult.isSuccess) {
       print('AIService: Local LLM init failed: ${initResult.message}');
       return null;
@@ -97,7 +105,7 @@ class AIService {
     final device = DeviceCapability.instance;
     final systemPrompt = 'Respond with valid JSON only.';
     final userPrompt = _buildLocalUserPrompt(word, context, level);
-    print('AIService: Calling Local LLM (${_localModelId}) for "$word" '
+    print('AIService: Calling Local LLM ($modelId) for "$word" '
         'on ${device.tier.name} device (keepAlive=$keepAlive)...');
 
     final genResult = await _localAiService.generateText(
@@ -107,15 +115,16 @@ class AIService {
     );
     if (genResult.isSuccess && genResult.text != null) {
       final parsed = _parseSummary(genResult.text!);
-      if (parsed != null) {
-        final def = parsed.definition;
+      final summary = _cleanUsableSummary(word, parsed);
+      if (summary != null) {
+        final def = summary.definition;
         return WordSummary(
           definition: def,
-          mainSay: parsed.mainSay.isNotEmpty ? parsed.mainSay : def,
-          useCases: parsed.useCases,
-          similarWords: parsed.similarWords,
-          detailedSummary: parsed.detailedSummary,
-          generatedAt: parsed.generatedAt,
+          mainSay: summary.mainSay.isNotEmpty ? summary.mainSay : def,
+          useCases: summary.useCases,
+          similarWords: summary.similarWords,
+          detailedSummary: summary.detailedSummary,
+          generatedAt: summary.generatedAt,
         );
       }
     }
@@ -131,7 +140,12 @@ class AIService {
     UserLevel level, {
     bool keepAlive = false,
   }) async {
-    final initResult = await _cactusService.initialize(_localModelId);
+    final modelId = _localModelId;
+    if (modelId == null) {
+      print('AIService: Cactus model not selected.');
+      return null;
+    }
+    final initResult = await _cactusService.initialize(modelId);
     if (!initResult.isSuccess) {
       print('AIService: Cactus init failed: ${initResult.message}');
       return null;
@@ -143,7 +157,7 @@ class AIService {
         'Always include exactly 3 use cases and 3 similar words. '
         'Do not repeat the input word. Do not add extra text before or after the JSON.';
     final userPrompt = _buildLocalUserPrompt(word, context, level);
-    print('AIService: Calling Cactus (${_localModelId}) for "$word" '
+    print('AIService: Calling Cactus ($modelId) for "$word" '
         'on ${device.tier.name} device...');
 
     final genResult = await _cactusService.generateText(
@@ -163,15 +177,16 @@ class AIService {
                   : '?'
           } tok/s)');
       final parsed = _parseSummary(genResult.text!);
-      if (parsed != null) {
-        final def = parsed.definition;
+      final summary = _cleanUsableSummary(word, parsed);
+      if (summary != null) {
+        final def = summary.definition;
         return WordSummary(
           definition: def,
-          mainSay: parsed.mainSay.isNotEmpty ? parsed.mainSay : def,
-          useCases: parsed.useCases,
-          similarWords: parsed.similarWords,
-          detailedSummary: parsed.detailedSummary,
-          generatedAt: parsed.generatedAt,
+          mainSay: summary.mainSay.isNotEmpty ? summary.mainSay : def,
+          useCases: summary.useCases,
+          similarWords: summary.similarWords,
+          detailedSummary: summary.detailedSummary,
+          generatedAt: summary.generatedAt,
         );
       }
     }
@@ -300,20 +315,38 @@ class AIService {
 ${context != null ? 'Context sentence: "$context"' : ''}
 Target level: ${level.displayName}
 
-Return ONLY a JSON object with exactly these keys:
-{
-  "definition": "concise definition appropriate for ${level.displayName} level",
-  "mainSay": "the core concept in 1-2 simple sentences",
-  "useCases": ["example 1", "example 2", "example 3"],
-  "similarWords": ["word1", "word2", "word3", "word4", "word5"],
-  "detailedSummary": "2-3 paragraph explanation for ${level.displayName} level"
-}
+Return ONLY a JSON object with these keys:
+- definition: plain-English meaning understandable by a general reader
+- mainSay: the core concept in 1-2 simple sentences
+- useCases: array of 3 complete example sentences
+- similarWords: array of 5 precise similar words
+- detailedSummary: clear explanation with useful nuance
+Definition should be easy to understand. Use cases and similar words should be richer and more advanced.
+Do not copy these instructions into the values.
 Do NOT wrap in markdown or add any text outside the JSON object.''';
   }
 
   String _buildLocalUserPrompt(String word, String? context, UserLevel level) {
     final ctx = context != null ? ' Used in: "$context".' : '';
-    return 'Define "$word" for ${level.displayName}.$ctx JSON:{"definition":"","useCases":["","",""],"similarWords":["","",""]}';
+    return '''
+Create a vocabulary card for "$word" at ${level.displayName} level.$ctx
+
+Return ONLY valid JSON with these keys:
+- definition: one plain-English meaning
+- useCases: three complete example sentences
+- similarWords: three precise similar words
+
+For "$word", write a short plain-English definition, three complete example
+sentences with advanced vocabulary, and three precise similar words.
+
+Rules:
+- Fill every field.
+- Use real synonyms, not the same word.
+- Never copy schema labels or instructions into values.
+- Make the definition easy, but make the examples and synonyms more advanced.
+- The similarWords values must be unique.
+- If the word is an adjective, use adjective synonyms.
+- Do not include markdown or explanation outside JSON.''';
   }
 
   // ─── Parser ──────────────────────────────────────────────────────────────
@@ -436,9 +469,73 @@ Do NOT wrap in markdown or add any text outside the JSON object.''';
 
   List<String> _toStringList(dynamic value) {
     if (value == null) return [];
-    if (value is List) return value.map((e) => e.toString()).toList();
-    if (value is String) return [value];
+    if (value is List) {
+      return value
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    if (value is String) {
+      final trimmed = value.trim();
+      return trimmed.isEmpty ? [] : [trimmed];
+    }
     return [];
+  }
+
+  WordSummary? _cleanUsableSummary(String word, WordSummary? summary) {
+    if (summary == null) return null;
+
+    final normalizedWord = word.trim().toLowerCase();
+    final normalizedDefinition = summary.definition.trim().toLowerCase();
+    final useCases = _uniqueUsefulItems(summary.useCases, normalizedWord);
+    final similarWords = _uniqueUsefulItems(summary.similarWords, normalizedWord);
+
+    if (normalizedDefinition.isEmpty ||
+        normalizedDefinition == normalizedWord ||
+        normalizedDefinition == 'the word $normalizedWord') {
+      print('AIService: rejected weak summary for "$word": bad definition');
+      return null;
+    }
+    if (useCases.length < 2) {
+      print('AIService: rejected weak summary for "$word": missing examples');
+      return null;
+    }
+    if (similarWords.length < 2) {
+      print('AIService: rejected weak summary for "$word": missing synonyms');
+      return null;
+    }
+
+    return WordSummary(
+      definition: summary.definition.trim(),
+      mainSay: summary.mainSay.trim(),
+      useCases: useCases,
+      similarWords: similarWords,
+      detailedSummary: summary.detailedSummary.trim(),
+      generatedAt: summary.generatedAt,
+    );
+  }
+
+  List<String> _uniqueUsefulItems(List<String> items, String normalizedWord) {
+    final result = <String>[];
+    final seen = <String>{};
+    final copiedInstructionPattern = RegExp(
+      r'natural sentence using|another natural sentence|third natural sentence|advanced natural sentence|precise similar words|plain-english definition|copy these instructions',
+      caseSensitive: false,
+    );
+
+    for (final item in items) {
+      final trimmed = item.trim();
+      final normalized = trimmed.toLowerCase();
+      if (trimmed.isEmpty ||
+          normalized == normalizedWord ||
+          copiedInstructionPattern.hasMatch(normalized) ||
+          seen.contains(normalized)) {
+        continue;
+      }
+      seen.add(normalized);
+      result.add(trimmed);
+    }
+    return result;
   }
 
   // ─── Test connection ──────────────────────────────────────────────────────

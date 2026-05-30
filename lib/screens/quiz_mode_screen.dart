@@ -2,13 +2,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../game/quiz_engine.dart';
+import '../models/word.dart';
 import '../providers/quiz_provider.dart';
 import '../theme/app_theme.dart';
 import 'quiz_results_screen.dart';
 
 class QuizModeScreen extends ConsumerStatefulWidget {
   final QuizMode mode;
-  const QuizModeScreen({super.key, required this.mode});
+  final List<Word>? dueWords;
+  const QuizModeScreen({super.key, required this.mode, this.dueWords});
 
   @override
   ConsumerState<QuizModeScreen> createState() => _QuizModeScreenState();
@@ -26,7 +28,9 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(quizProvider.notifier).startSession(widget.mode);
+      ref
+          .read(quizProvider.notifier)
+          .startSession(mode: widget.mode, dueWords: widget.dueWords);
     });
   }
 
@@ -111,7 +115,9 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 12),
-              Text('Add some words and let AI analyze them first.',
+              Text(widget.dueWords != null
+                      ? 'You have no due review words right now. Come back later or play a regular mode.'
+                      : 'Add some words and let AI analyze them first.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
               const SizedBox(height: 32),

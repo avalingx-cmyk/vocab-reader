@@ -1,6 +1,7 @@
 enum UserLevel {
   beginner,
   intermediate,
+  upperIntermediate,
   advanced,
   pro;
 
@@ -10,6 +11,8 @@ enum UserLevel {
         return 'Beginner';
       case UserLevel.intermediate:
         return 'Intermediate';
+      case UserLevel.upperIntermediate:
+        return 'Upper Intermediate';
       case UserLevel.advanced:
         return 'Advanced';
       case UserLevel.pro:
@@ -23,6 +26,8 @@ enum UserLevel {
         return 'Simple explanations, basic vocabulary';
       case UserLevel.intermediate:
         return 'Standard explanations, common synonyms';
+      case UserLevel.upperIntermediate:
+        return 'Clear explanations with some nuance';
       case UserLevel.advanced:
         return 'Technical depth, nuanced meanings';
       case UserLevel.pro:

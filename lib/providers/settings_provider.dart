@@ -78,20 +78,22 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
     final validLocalIds =
         LocalAIService.availableModels.map((m) => m.id).toSet();
+    final fallbackLocalModel = LocalAIService.availableModels.first.id;
     final safeLocalModel =
         localModel != null && validLocalIds.contains(localModel)
             ? localModel
-            : 'qwen';
+            : fallbackLocalModel;
 
     final validCactusIds =
         CactusLocalService.availableModels.map((m) => m.id).toSet();
+    final fallbackCactusModel = CactusLocalService.availableModels.first.id;
     final safeCactusModel =
         cactusModel != null && validCactusIds.contains(cactusModel)
             ? cactusModel
-            : 'gemma-270m';
+            : fallbackCactusModel;
 
     state = SettingsState(
-      userLevel: levelStr != null ? UserLevel.fromString(levelStr) : UserLevel.beginner,
+      userLevel: UserLevel.beginner,
       aiProvider: provider ?? 'openai',
       localModelId: safeLocalModel,
       cactusModelId: safeCactusModel,
@@ -106,6 +108,12 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     }
     if (safeCactusModel != cactusModel) {
       await DatabaseService.instance.setSetting('cactus_model_id', safeCactusModel);
+    }
+    if (levelStr != UserLevel.beginner.name) {
+      await DatabaseService.instance.setSetting(
+        'user_level',
+        UserLevel.beginner.name,
+      );
     }
   }
 

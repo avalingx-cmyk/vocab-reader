@@ -6,6 +6,8 @@ import '../services/database_service.dart';
 import '../services/ai_service.dart';
 import 'local_ai_service.dart';
 import 'cactus_local_service.dart';
+import '../models/user_level.dart';
+import '../models/word.dart';
 
 import '../providers/connectivity_provider.dart';
 
@@ -85,8 +87,10 @@ class SyncService {
       final provider =
           await DatabaseService.instance.getSetting('ai_provider') ?? 'gemini';
       final localModelId = provider == 'cactus'
-          ? await DatabaseService.instance.getSetting('cactus_model_id') ?? 'gemma-270m'
-          : await DatabaseService.instance.getSetting('local_model_id') ?? 'qwen';
+          ? await DatabaseService.instance.getSetting('cactus_model_id') ??
+              CactusLocalService.availableModels.first.id
+          : await DatabaseService.instance.getSetting('local_model_id') ??
+              LocalAIService.availableModels.first.id;
       print(
           'SyncService: Starting sync with provider=$provider localModel=$localModelId');
 
@@ -291,8 +295,10 @@ class SyncService {
     final provider =
         await DatabaseService.instance.getSetting('ai_provider') ?? 'gemini';
     final localModel = provider == 'cactus'
-        ? await DatabaseService.instance.getSetting('cactus_model_id') ?? 'gemma-270m'
-        : await DatabaseService.instance.getSetting('local_model_id') ?? 'qwen';
+        ? await DatabaseService.instance.getSetting('cactus_model_id') ??
+            CactusLocalService.availableModels.first.id
+        : await DatabaseService.instance.getSetting('local_model_id') ??
+            LocalAIService.availableModels.first.id;
     // Key names must match what settings_provider.dart uses to save them
     String? openAIKey = await DatabaseService.instance.getSetting('openai_key');
     String? geminiKey = await DatabaseService.instance.getSetting('gemini_key');
@@ -359,14 +365,17 @@ class SyncService {
     final summary = await aiService.generateSummary(
       word: word.text,
       context: word.context,
-      level: word.userLevel,
+      level: UserLevel.beginner,
       keepAlive: isLocal && retryCount < 2,
     );
 
     if (summary != null) {
+      final enrichedSummary = await _withLibrarySimilarWords(word, summary);
       await DatabaseService.instance.updateWord(
         word.copyWith(
-            summary: summary, isPending: false, updatedAt: DateTime.now()),
+            summary: enrichedSummary,
+            isPending: false,
+            updatedAt: DateTime.now()),
       );
       await DatabaseService.instance.removeFromQueue(wordId);
       print('SyncService: ✓ Summary saved for "${word.text}".');
@@ -390,5 +399,59 @@ class SyncService {
   Future<void> dispose() async {
     _statusCtrl.close();
     _progressCtrl.close();
+  }
+
+  Future<WordSummary> _withLibrarySimilarWords(
+    Word word,
+    WordSummary summary,
+  ) async {
+    final libraryWords = await DatabaseService.instance.getWords();
+    final candidates = <String>[];
+    final current = word.text.trim().toLowerCase();
+
+    for (final savedWord in libraryWords) {
+      final text = savedWord.text.trim();
+      if (text.isEmpty || text.toLowerCase() == current) continue;
+
+      final existingSummary = savedWord.summary;
+      final haystack = [
+        savedWord.text,
+        existingSummary?.definition ?? '',
+        existingSummary?.mainSay ?? '',
+        ...?existingSummary?.similarWords,
+      ].join(' ').toLowerCase();
+
+      final generatedSimilar = summary.similarWords
+          .map((item) => item.toLowerCase())
+          .toSet();
+      if (generatedSimilar.contains(text.toLowerCase()) ||
+          summary.definition.toLowerCase().contains(text.toLowerCase()) ||
+          haystack.contains(current)) {
+        candidates.add(text);
+      }
+    }
+
+    final merged = <String>[];
+    final seen = <String>{};
+    for (final item in [...candidates, ...summary.similarWords]) {
+      final normalized = item.trim().toLowerCase();
+      if (normalized.isEmpty || normalized == current || seen.contains(normalized)) {
+        continue;
+      }
+      seen.add(normalized);
+      merged.add(item.trim());
+      if (merged.length >= 5) break;
+    }
+
+    if (merged.isEmpty) return summary;
+
+    return WordSummary(
+      definition: summary.definition,
+      mainSay: summary.mainSay,
+      useCases: summary.useCases,
+      similarWords: merged,
+      detailedSummary: summary.detailedSummary,
+      generatedAt: summary.generatedAt,
+    );
   }
 }

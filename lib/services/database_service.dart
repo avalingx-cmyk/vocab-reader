@@ -21,9 +21,27 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
+      onUpgrade: _upgradeDB,
     );
+  }
+
+  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('''
+        ALTER TABLE words ADD COLUMN last_reviewed_at TEXT
+      ''');
+      await db.execute('''
+        ALTER TABLE words ADD COLUMN next_review_at TEXT
+      ''');
+      await db.execute('''
+        ALTER TABLE words ADD COLUMN success_count INTEGER DEFAULT 0
+      ''');
+      await db.execute('''
+        ALTER TABLE words ADD COLUMN failure_count INTEGER DEFAULT 0
+      ''');
+    }
   }
 
   Future _createDB(Database db, int version) async {
@@ -42,7 +60,11 @@ class DatabaseService {
         detailed_summary TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        is_pending INTEGER DEFAULT 0
+        is_pending INTEGER DEFAULT 0,
+        last_reviewed_at TEXT,
+        next_review_at TEXT,
+        success_count INTEGER DEFAULT 0,
+        failure_count INTEGER DEFAULT 0
       )
     ''');
 
@@ -229,6 +251,10 @@ class DatabaseService {
       'created_at': word.createdAt.toIso8601String(),
       'updated_at': word.updatedAt.toIso8601String(),
       'is_pending': word.isPending ? 1 : 0,
+      'last_reviewed_at': word.lastReviewedAt?.toIso8601String(),
+      'next_review_at': word.nextReviewAt?.toIso8601String(),
+      'success_count': word.successCount,
+      'failure_count': word.failureCount,
     };
   }
 
@@ -256,6 +282,14 @@ class DatabaseService {
       createdAt: DateTime.parse(map['created_at'] as String),
       updatedAt: DateTime.parse(map['updated_at'] as String),
       isPending: (map['is_pending'] as int) == 1,
+      lastReviewedAt: map['last_reviewed_at'] != null
+          ? DateTime.parse(map['last_reviewed_at'] as String)
+          : null,
+      nextReviewAt: map['next_review_at'] != null
+          ? DateTime.parse(map['next_review_at'] as String)
+          : null,
+      successCount: map['success_count'] as int? ?? 0,
+      failureCount: map['failure_count'] as int? ?? 0,
     );
   }
 }

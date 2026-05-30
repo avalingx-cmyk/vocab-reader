@@ -63,24 +63,6 @@ class LocalAIService {
 
   static const List<LocalModelConfig> availableModels = [
     LocalModelConfig(
-      id: 'smolm-135',
-      displayName: 'SmolLM2 (135M) ⚡',
-      sizeStr: '105 MB',
-      filename: 'smolm2-135m-instruct-q4_k_m.gguf',
-      downloadUrl:
-          'https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf',
-      sizeBytes: 110100480,
-    ),
-    LocalModelConfig(
-      id: 'smolm-360',
-      displayName: 'SmolLM2 (360M)',
-      sizeStr: '280 MB',
-      filename: 'smolm2-360m-instruct-q4_k_m.gguf',
-      downloadUrl:
-          'https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf',
-      sizeBytes: 293601280,
-    ),
-    LocalModelConfig(
       id: 'qwen',
       displayName: 'Qwen 2.5 (0.5B)',
       sizeStr: '432 MB',
@@ -289,8 +271,6 @@ class LocalAIService {
 
   PromptFormat? _getFormatterForModel(String modelId) {
     switch (modelId) {
-      case 'smolm-135':
-      case 'smolm-360':
       case 'qwen':
       case 'qwen-hq':
         return ChatMLFormat();

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/word.dart';
-import '../models/user_level.dart';
 import '../providers/word_provider.dart';
 import '../providers/book_provider.dart';
 import '../services/database_service.dart';
@@ -26,7 +25,6 @@ class _EditWordScreenState extends ConsumerState<EditWordScreen> {
   late final TextEditingController _pageController;
   late final TextEditingController _contextController;
 
-  late UserLevel _selectedLevel;
   bool _isLoading = false;
 
   @override
@@ -36,7 +34,6 @@ class _EditWordScreenState extends ConsumerState<EditWordScreen> {
     _bookController = TextEditingController(text: widget.word.bookName);
     _pageController = TextEditingController(text: widget.word.pageNumber?.toString() ?? '');
     _contextController = TextEditingController(text: widget.word.context ?? '');
-    _selectedLevel = widget.word.userLevel;
   }
 
   @override
@@ -59,15 +56,13 @@ class _EditWordScreenState extends ConsumerState<EditWordScreen> {
       final newContext = _contextController.text.trim().isNotEmpty ? _contextController.text.trim() : null;
 
       final textChanged = newText != widget.word.text;
-      final levelChanged = _selectedLevel != widget.word.userLevel;
-      final shouldRegenerate = textChanged || levelChanged;
+      final shouldRegenerate = textChanged;
 
       final updatedWord = widget.word.copyWith(
         text: newText,
         bookName: newBookName,
         pageNumber: newPageNumber,
         context: newContext,
-        userLevel: _selectedLevel,
         isPending: shouldRegenerate ? true : widget.word.isPending,
         updatedAt: DateTime.now(),
       );
@@ -79,7 +74,7 @@ class _EditWordScreenState extends ConsumerState<EditWordScreen> {
       }
 
       if (mounted) {
-        ref.invalidate(wordListProvider(null));
+        ref.read(wordRefreshProvider.notifier).refresh();
         ref.invalidate(bookListProvider);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

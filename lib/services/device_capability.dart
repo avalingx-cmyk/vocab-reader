@@ -170,11 +170,11 @@ class DeviceCapability {
       case DeviceTier.flagship:
         return 'qwen-hq';
       case DeviceTier.high:
-        return 'smolm-360';
+        return 'qwen';
       case DeviceTier.mid:
-        return 'smolm-360';
+        return 'qwen';
       case DeviceTier.low:
-        return 'smolm-135';
+        return 'qwen';
     }
   }
 
