@@ -11,6 +11,10 @@ class Word {
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool isPending;
+  final DateTime? lastReviewedAt;
+  final DateTime? nextReviewAt;
+  final int successCount;
+  final int failureCount;
 
   Word({
     required this.id,
@@ -23,6 +27,10 @@ class Word {
     required this.createdAt,
     required this.updatedAt,
     this.isPending = false,
+    this.lastReviewedAt,
+    this.nextReviewAt,
+    this.successCount = 0,
+    this.failureCount = 0,
   });
 
   factory Word.fromJson(Map<String, dynamic> json) {
@@ -39,6 +47,14 @@ class Word {
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       isPending: json['isPending'] as bool? ?? false,
+      lastReviewedAt: json['lastReviewedAt'] != null
+          ? DateTime.parse(json['lastReviewedAt'] as String)
+          : null,
+      nextReviewAt: json['nextReviewAt'] != null
+          ? DateTime.parse(json['nextReviewAt'] as String)
+          : null,
+      successCount: json['successCount'] as int? ?? 0,
+      failureCount: json['failureCount'] as int? ?? 0,
     );
   }
 
@@ -54,6 +70,10 @@ class Word {
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'isPending': isPending,
+      'lastReviewedAt': lastReviewedAt?.toIso8601String(),
+      'nextReviewAt': nextReviewAt?.toIso8601String(),
+      'successCount': successCount,
+      'failureCount': failureCount,
     };
   }
 
@@ -68,6 +88,10 @@ class Word {
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? isPending,
+    DateTime? lastReviewedAt,
+    DateTime? nextReviewAt,
+    int? successCount,
+    int? failureCount,
   }) {
     return Word(
       id: id ?? this.id,
@@ -80,6 +104,10 @@ class Word {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isPending: isPending ?? this.isPending,
+      lastReviewedAt: lastReviewedAt ?? this.lastReviewedAt,
+      nextReviewAt: nextReviewAt ?? this.nextReviewAt,
+      successCount: successCount ?? this.successCount,
+      failureCount: failureCount ?? this.failureCount,
     );
   }
 }

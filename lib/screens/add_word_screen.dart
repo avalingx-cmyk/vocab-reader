@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../models/word.dart';
+import '../models/user_level.dart';
 import '../providers/word_provider.dart';
 import '../providers/book_provider.dart';
-import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
 import '../services/sync_service.dart';
 import '../theme/app_theme.dart';
@@ -41,8 +41,6 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final settings = ref.read(settingsProvider);
-
       final word = Word(
         id: const Uuid().v4(),
         text: _wordController.text.trim(),
@@ -53,7 +51,7 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
         context: _contextController.text.trim().isNotEmpty
             ? _contextController.text.trim()
             : null,
-        userLevel: settings.userLevel,
+        userLevel: UserLevel.beginner,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         isPending: true,
@@ -62,7 +60,7 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
       await DatabaseService.instance.addWord(word);
       await DatabaseService.instance.addToQueue(word.id);
       
-      ref.invalidate(wordListProvider(null));
+      ref.read(wordRefreshProvider.notifier).refresh();
       ref.invalidate(bookListProvider);
 
       SyncService.instance.processPendingQueue();

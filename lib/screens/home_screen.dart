@@ -9,10 +9,9 @@ import 'add_word_screen.dart';
 import 'word_detail_screen.dart';
 import 'books_screen.dart';
 import 'quiz_screen.dart';
+import 'review_screen.dart';
 import 'settings_screen.dart';
-import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
-import '../models/user_level.dart';
 
 final navIndexProvider = StateProvider<int>((ref) => 0);
 final _debounceTimerProvider = StateProvider<Timer?>((ref) => null);
@@ -45,20 +44,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             case SyncError.notConfigured:
               msg = 'AI not configured. Add an API key in Settings.';
               break;
-            case SyncError.localLibUnavailable:
-              msg =
-                  'Local AI engine missing in this build. Please use Gemini or OpenAI in Settings.';
-              break;
             case SyncError.localModelMissing:
-              msg =
-                  'Local AI model not downloaded. Go to Settings to download it.';
+              msg = errMsg ??
+                  'Cactus model unavailable or generation failed. Check Settings.';
               break;
             case SyncError.networkError:
               msg = 'Network error. Please check your internet connection.';
-              break;
-            case SyncError.localAiFailed:
-              msg = errMsg ??
-                  'Local AI generation failed for some words. Check logs.';
               break;
             case SyncError.unknown:
             default:
@@ -76,8 +67,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
       if (status == SyncStatus.completed || status == SyncStatus.error) {
         if (mounted) {
-          ref.invalidate(wordListProvider(null));
-          ref.invalidate(filteredWordsProvider(null));
+          ref.read(wordRefreshProvider.notifier).refresh();
         }
       }
     });
@@ -100,7 +90,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           duration: Duration(seconds: 1)),
     );
     await SyncService.instance.resetFailedWords();
-    if (mounted) ref.invalidate(wordListProvider(null));
+    if (mounted) ref.read(wordRefreshProvider.notifier).refresh();
   }
 
   void _onSearchChanged(String value) {
@@ -132,7 +122,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          currentIndex == 0 ? 'My Library' : 'Bookshelf',
+          switch (currentIndex) {
+            0 => 'My Library',
+            1 => 'Bookshelf',
+            2 => 'Review',
+            _ => 'Quiz',
+          },
           style: Theme.of(context).textTheme.titleLarge,
         ),
         actions: [
@@ -215,6 +210,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           children: const [
             WordsTab(),
             BooksScreen(),
+            ReviewScreen(),
             QuizScreen(),
           ],
         ),
@@ -226,7 +222,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   MaterialPageRoute(builder: (_) => const AddWordScreen()),
                 );
                 if (mounted) {
-                  ref.invalidate(wordListProvider(null));
+                  ref.read(wordRefreshProvider.notifier).refresh();
                   _trySync();
                 }
               },
@@ -263,6 +259,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               icon: Icon(Icons.book_rounded),
               activeIcon: Icon(Icons.book_rounded),
               label: 'Books',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.event_repeat_rounded),
+              activeIcon: Icon(Icons.event_repeat_rounded),
+              label: 'Review',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.quiz_outlined),
@@ -307,14 +308,36 @@ class _SyncButton extends StatelessWidget {
         final syncing = snapshot.data == SyncStatus.syncing ||
             SyncService.instance.isSyncing;
         if (syncing) {
-          return const Padding(
-            padding: EdgeInsets.all(12.0),
-            child: SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: AppTheme.primaryBlue),
-            ),
+          return StreamBuilder<SyncProgress>(
+            stream: SyncService.instance.syncProgressStream,
+            builder: (context, progressSnapshot) {
+              final progress = progressSnapshot.data;
+              final label = progress != null && progress.total > 0
+                  ? '${progress.processed}/${progress.total}'
+                  : '';
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppTheme.primaryBlue),
+                    ),
+                    if (label.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Text(label,
+                          style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.primaryBlue)),
+                    ],
+                  ],
+                ),
+              );
+            },
           );
         }
         return IconButton(
@@ -331,31 +354,28 @@ class WordsTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final wordsAsync = ref.watch(filteredWordsProvider(null));
+    final words = ref.watch(filteredWordsProvider(null));
     final searchQuery = ref.watch(wordSearchProvider);
 
-    return wordsAsync.when(
-      data: (words) {
-        if (words.isEmpty) {
-          return searchQuery.isNotEmpty
-              ? _buildNoResults(context, searchQuery)
-              : _buildEmptyState(context);
+    if (words.isEmpty) {
+      final allWords = ref.watch(wordListProvider(null)).valueOrNull ?? [];
+      if (allWords.isEmpty) {
+        return _buildEmptyState(context);
+      }
+      return searchQuery.isNotEmpty
+          ? _buildNoResults(context, searchQuery)
+          : _buildEmptyState(context);
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      itemCount: words.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return _DashboardHeader(words: words);
         }
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-          itemCount: words.length + 1,
-          itemBuilder: (context, index) {
-            if (index == 0) {
-              final booksCount = words.map((w) => w.bookName).toSet().length;
-              return _DashboardHeader(
-                  wordsCount: words.length, booksCount: booksCount);
-            }
-            return _WordCard(word: words[index - 1]);
-          },
-        );
+        return _WordCard(word: words[index - 1]);
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => Center(child: Text('Error: $error')),
     );
   }
 
@@ -429,20 +449,21 @@ class WordsTab extends ConsumerWidget {
 }
 
 class _DashboardHeader extends ConsumerWidget {
-  final int wordsCount;
-  final int booksCount;
+  final List<Word> words;
 
-  const _DashboardHeader({required this.wordsCount, required this.booksCount});
+  const _DashboardHeader({required this.words});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider);
-    final int weeklyGoal = settings.weeklyGoal;
-    // Calculate new words this week - for demo we use a portion of total
-    final int newThisWeek = (wordsCount > (weeklyGoal * 0.8).toInt())
-        ? (weeklyGoal * 0.8).toInt()
-        : wordsCount;
-    final double progress = (weeklyGoal > 0) ? newThisWeek / weeklyGoal : 0;
+    final int wordsCount = words.length;
+    final int booksCount = words.map((w) => w.bookName).toSet().length;
+    final int dueToday = words
+        .where((w) =>
+            w.summary != null &&
+            (w.nextReviewAt == null ||
+                !w.nextReviewAt!.isAfter(DateTime.now())))
+        .length;
+    final int mastered = words.where((w) => w.successCount >= 4).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -484,8 +505,32 @@ class _DashboardHeader extends ConsumerWidget {
             ),
           ],
         ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMiniStatCard(
+                context,
+                'Due Today',
+                dueToday.toString(),
+                Icons.event_repeat_rounded,
+                const Color(0xFF16A34A),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildMiniStatCard(
+                context,
+                'Mastered',
+                mastered.toString(),
+                Icons.workspace_premium_rounded,
+                const Color(0xFF7C3AED),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 20),
-        _buildMomentumCard(context, newThisWeek, weeklyGoal, progress),
+        _buildWeeklyActivityChart(context, words),
         const SizedBox(height: 32),
         Text(
           'Recent Words',
@@ -499,20 +544,48 @@ class _DashboardHeader extends ConsumerWidget {
     );
   }
 
-  Widget _buildExpandableCart(BuildContext context, String title, String value,
-      IconData icon, Color color, String submenuText, VoidCallback onTap) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+  Widget _buildMiniStatCard(
+    BuildContext context,
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return _DashboardSurfaceCard(
+      padding: const EdgeInsets.all(14),
+      borderRadius: 20,
+      child: Row(
+        children: [
+          _DashboardIconChip(icon: icon, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(value,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        )),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildExpandableCart(BuildContext context, String title, String value,
+      IconData icon, Color color, String submenuText, VoidCallback onTap) {
+    return _DashboardSurfaceCard(
+      borderRadius: 24,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: Material(
@@ -524,14 +597,7 @@ class _DashboardHeader extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, color: color, size: 20),
-                  ),
+                  _DashboardIconChip(icon: icon, color: color),
                   const SizedBox(height: 16),
                   Text(
                     value,
@@ -573,77 +639,120 @@ class _DashboardHeader extends ConsumerWidget {
     );
   }
 
-  Widget _buildMomentumCard(
-      BuildContext context, int current, int goal, double progress) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppTheme.primaryBlue,
-            AppTheme.primaryBlue.withValues(alpha: 0.8)
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryBlue.withValues(alpha: 0.3),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+  Widget _buildWeeklyActivityChart(BuildContext context, List<Word> words) {
+    final today = DateTime.now();
+    final createdCounts = List<int>.filled(7, 0);
+    final reviewedCounts = List<int>.filled(7, 0);
+
+    for (final word in words) {
+      final createdDiff = today
+          .difference(DateTime(
+              word.createdAt.year, word.createdAt.month, word.createdAt.day))
+          .inDays;
+      if (createdDiff >= 0 && createdDiff < 7) {
+        createdCounts[6 - createdDiff]++;
+      }
+      if (word.lastReviewedAt != null) {
+        final reviewed = word.lastReviewedAt!;
+        final reviewedDiff = today
+            .difference(DateTime(reviewed.year, reviewed.month, reviewed.day))
+            .inDays;
+        if (reviewedDiff >= 0 && reviewedDiff < 7) {
+          reviewedCounts[6 - reviewedDiff]++;
+        }
+      }
+    }
+
+    final maxValue = [...createdCounts, ...reviewedCounts]
+        .fold<int>(1, (a, b) => a > b ? a : b);
+    const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+    return _DashboardSurfaceCard(
+      padding: const EdgeInsets.all(18),
+      borderRadius: 24,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.local_fire_department_rounded,
-                    color: Colors.white, size: 20),
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                'Keep the momentum!',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16),
-              ),
-            ],
+          const Text(
+            '7-Day Activity',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 4),
           Text(
-            "You've learned $current new words this week. Reach your goal of $goal to unlock the 'Polyglot' badge.",
+            'Blue = added, Green = reviewed',
             style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.9),
-                fontSize: 14,
-                height: 1.4),
-          ),
-          const SizedBox(height: 20),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: LinearProgressIndicator(
-              value: progress,
-              backgroundColor: Colors.white.withValues(alpha: 0.2),
-              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-              minHeight: 8,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            '${(progress * 100).toInt()}% of weekly goal reached',
-            style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.8),
-                fontSize: 12,
-                fontWeight: FontWeight.w600),
+          const SizedBox(height: 18),
+          SizedBox(
+            height: 120,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: List.generate(7, (i) {
+                final createdFactor = createdCounts[i] / maxValue;
+                final reviewedFactor = reviewedCounts[i] / maxValue;
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Flexible(
+                                  child: FractionallySizedBox(
+                                    heightFactor: createdFactor == 0
+                                        ? 0.04
+                                        : createdFactor,
+                                    child: Container(
+                                      width: 10,
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.primaryBlue,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 3),
+                                Flexible(
+                                  child: FractionallySizedBox(
+                                    heightFactor: reviewedFactor == 0
+                                        ? 0.04
+                                        : reviewedFactor,
+                                    child: Container(
+                                      width: 10,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF16A34A),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(labels[i],
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            )),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ),
           ),
         ],
       ),
@@ -691,10 +800,7 @@ class _WordCard extends StatelessWidget {
                             fontWeight: FontWeight.bold,
                           ),
                     ),
-                    if (word.isPending)
-                      _PendingChip()
-                    else
-                      _LevelBadge(level: word.userLevel),
+                    if (word.isPending) _PendingChip(),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -748,53 +854,122 @@ class _WordCard extends StatelessWidget {
   }
 }
 
-class _LevelBadge extends StatelessWidget {
-  final UserLevel level;
-  const _LevelBadge({required this.level});
+class _DashboardSurfaceCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final double borderRadius;
+
+  const _DashboardSurfaceCard({
+    required this.child,
+    this.padding = EdgeInsets.zero,
+    this.borderRadius = 24,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: padding,
       decoration: BoxDecoration(
-        color: AppTheme.primaryBlue.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(borderRadius),
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: Text(
-        level.displayName,
-        style: const TextStyle(
-          color: AppTheme.primaryBlue,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
+      child: child,
     );
   }
 }
 
-class _PendingChip extends StatelessWidget {
+class _DashboardIconChip extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+
+  const _DashboardIconChip({
+    required this.icon,
+    required this.color,
+  });
+
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: AppTheme.accentAmber.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.auto_awesome_rounded,
-              size: 12, color: AppTheme.accentAmber),
-          SizedBox(width: 4),
-          Text(
-            'Analyzing',
-            style: TextStyle(
-                fontSize: 11,
-                color: AppTheme.accentAmber,
-                fontWeight: FontWeight.bold),
-          ),
-        ],
+      child: Icon(icon, size: 18, color: color),
+    );
+  }
+}
+
+class _PendingChip extends StatefulWidget {
+  @override
+  State<_PendingChip> createState() => _PendingChipState();
+}
+
+class _PendingChipState extends State<_PendingChip>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _pulse;
+  int _dotCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _pulse = Tween<double>(begin: 0.3, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    _tickDots();
+  }
+
+  void _tickDots() {
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      setState(() => _dotCount = (_dotCount + 1) % 4);
+      _tickDots();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, child) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: AppTheme.accentAmber.withValues(alpha: 0.08 * _pulse.value),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.auto_awesome_rounded,
+                size: 12, color: AppTheme.accentAmber),
+            const SizedBox(width: 4),
+            Text(
+              'Analyzing${'.' * _dotCount}',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.accentAmber.withValues(alpha: _pulse.value),
+                  fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
       ),
     );
   }

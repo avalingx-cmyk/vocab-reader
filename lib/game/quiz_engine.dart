@@ -15,12 +15,22 @@ class QuizQuestion {
   final QuizMode mode;
   final List<String> options; // for MCQ / speed round
   final String correctAnswer;
+  final String questionLabel;
+  final String questionText;
+  final String? explanation;
+  final String? difficultyTag;
+  final bool isAiGenerated;
 
   const QuizQuestion({
     required this.word,
     required this.mode,
     required this.options,
     required this.correctAnswer,
+    this.questionLabel = '',
+    this.questionText = '',
+    this.explanation,
+    this.difficultyTag,
+    this.isAiGenerated = false,
   });
 }
 
@@ -33,6 +43,7 @@ class QuizSession {
   int streak = 0;
   int bestStreak = 0;
   final List<Word> missedWords = [];
+  final List<Word> correctWords = [];
   final List<AnswerState> answerStates;
 
   QuizSession({required this.questions, required this.mode})
@@ -59,6 +70,7 @@ class QuizSession {
     if (isCorrect) {
       score++;
       streak++;
+      correctWords.add(q.word);
       if (streak > bestStreak) bestStreak = streak;
     } else {
       streak = 0;
@@ -77,6 +89,7 @@ class QuizSession {
     if (known) {
       score++;
       streak++;
+      correctWords.add(q.word);
       if (streak > bestStreak) bestStreak = streak;
     } else {
       streak = 0;
@@ -125,6 +138,7 @@ class QuizEngine {
           mode: mode,
           options: const [],
           correctAnswer: definition,
+          questionText: word.text,
         );
 
       case QuizMode.multipleChoice:
@@ -141,6 +155,8 @@ class QuizEngine {
           mode: mode,
           options: options,
           correctAnswer: definition,
+          questionLabel: 'What does this word mean?',
+          questionText: word.text,
         );
 
       case QuizMode.spellingBee:
@@ -149,6 +165,7 @@ class QuizEngine {
           mode: mode,
           options: const [],
           correctAnswer: word.text,
+          questionText: word.summary!.definition,
         );
     }
   }

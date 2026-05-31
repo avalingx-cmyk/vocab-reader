@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/word.dart';
 import '../providers/word_provider.dart';
-import '../providers/book_provider.dart';
 import '../services/database_service.dart';
 import '../services/sync_service.dart';
 import 'edit_word_screen.dart';
@@ -70,7 +69,7 @@ class _WordDetailScreenState extends ConsumerState<WordDetailScreen> {
                 MaterialPageRoute(builder: (_) => EditWordScreen(word: word)),
               );
               if (result == true && context.mounted) {
-                ref.invalidate(wordListProvider(null));
+                ref.read(wordRefreshProvider.notifier).refresh();
                 Navigator.of(context).pop();
               }
             },
@@ -118,31 +117,12 @@ class _WordDetailScreenState extends ConsumerState<WordDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              word.text,
-              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                    color: AppTheme.primaryBlue,
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryBlue.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
+        Text(
+          word.text,
+          style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                color: AppTheme.primaryBlue,
+                fontWeight: FontWeight.bold,
               ),
-              child: Text(
-                word.userLevel.displayName,
-                style: const TextStyle(
-                    color: AppTheme.primaryBlue,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12),
-              ),
-            ),
-          ],
         ),
         const SizedBox(height: 12),
         Row(
@@ -358,11 +338,7 @@ class _WordDetailScreenState extends ConsumerState<WordDetailScreen> {
                 await DatabaseService.instance.removeFromQueue(word.id);
               }
               await DatabaseService.instance.deleteWord(word.id);
-              // Invalidate all affected providers so book lists and word lists refresh
-              ref.invalidate(wordListProvider(null));
-              ref.invalidate(wordListProvider(word.bookName));
-              ref.invalidate(filteredWordsProvider(null));
-              ref.invalidate(bookListProvider);
+              ref.read(wordRefreshProvider.notifier).refresh();
               if (context.mounted) {
                 Navigator.pop(context); // Close dialog
                 Navigator.pop(context); // Go back to list

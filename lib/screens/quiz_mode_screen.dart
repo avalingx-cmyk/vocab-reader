@@ -2,13 +2,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../game/quiz_engine.dart';
+import '../models/word.dart';
 import '../providers/quiz_provider.dart';
 import '../theme/app_theme.dart';
 import 'quiz_results_screen.dart';
 
 class QuizModeScreen extends ConsumerStatefulWidget {
   final QuizMode mode;
-  const QuizModeScreen({super.key, required this.mode});
+  final List<Word>? dueWords;
+  const QuizModeScreen({super.key, required this.mode, this.dueWords});
 
   @override
   ConsumerState<QuizModeScreen> createState() => _QuizModeScreenState();
@@ -26,7 +28,9 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(quizProvider.notifier).startSession(widget.mode);
+      ref
+          .read(quizProvider.notifier)
+          .startSession(mode: widget.mode, dueWords: widget.dueWords);
     });
   }
 
@@ -97,6 +101,31 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
       }
     });
 
+    if (quizState.isGenerating) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(_modeTitle(widget.mode)),
+          backgroundColor: Colors.transparent,
+        ),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 20),
+                Text(
+                  'Generating quiz...',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (session == null) {
       return Scaffold(
         appBar: AppBar(title: Text(_modeTitle(widget.mode)), backgroundColor: Colors.transparent),
@@ -111,7 +140,9 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 12),
-              Text('Add some words and let AI analyze them first.',
+              Text(widget.dueWords != null
+                      ? 'You have no due review words right now. Come back later or play a regular mode.'
+                      : 'Add some words and let AI analyze them first.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
               const SizedBox(height: 32),
@@ -178,6 +209,28 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
               ],
             ),
           ),
+          if (quizState.generationNotice != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surfaceContainerHighest
+                      .withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  quizState.generationNotice!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
           Expanded(
             child: _ShakeWidget(
               key: _shakeKey,
@@ -483,7 +536,9 @@ class _MultipleChoiceMode extends StatelessWidget {
             ),
             child: Column(children: [
               Text(
-                'What does this word mean?',
+                question.questionLabel.isEmpty
+                    ? 'What does this word mean?'
+                    : question.questionLabel,
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -493,7 +548,9 @@ class _MultipleChoiceMode extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                question.word.text,
+                question.questionText.isEmpty
+                    ? question.word.text
+                    : question.questionText,
                 style: TextStyle(
                   fontSize: 32, fontWeight: FontWeight.bold, color: color,
                 ),
@@ -510,6 +567,21 @@ class _MultipleChoiceMode extends StatelessWidget {
                 color: color,
                 onTap: submitted ? null : () => onAnswer(opt),
               )),
+          if (submitted && question.explanation != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                'Why: ${question.explanation!}',
+                style: const TextStyle(fontSize: 14, height: 1.4),
+              ),
+            ),
+          ],
         ],
       ),
     );

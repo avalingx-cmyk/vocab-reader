@@ -232,7 +232,7 @@ class BooksScreen extends ConsumerWidget {
         await DatabaseService.instance.updateWord(word.copyWith(bookName: newName, updatedAt: DateTime.now()));
       }
       ref.invalidate(bookListProvider);
-      ref.invalidate(wordListProvider(null));
+      ref.read(wordRefreshProvider.notifier).refresh();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Collection renamed')));
       }
@@ -271,7 +271,7 @@ class BooksScreen extends ConsumerWidget {
         await DatabaseService.instance.deleteWord(word.id);
       }
       ref.invalidate(bookListProvider);
-      ref.invalidate(wordListProvider(null));
+      ref.read(wordRefreshProvider.notifier).refresh();
       if (context.mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Collection "${book.name}" removed')));
