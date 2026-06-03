@@ -82,7 +82,9 @@ void _free(Pointer ptr) {
 Pointer<Int8> stringToPtr(String s) {
   final units = utf8.encode(s);
   final ptr = _malloc<Int8>(units.length + 1);
-  for (var i = 0; i < units.length; i++) ptr[i] = units[i];
+  for (var i = 0; i < units.length; i++) {
+    ptr[i] = units[i];
+  }
   ptr[units.length] = 0;
   return ptr;
 }

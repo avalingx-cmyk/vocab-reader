@@ -4,8 +4,6 @@ import '../models/word.dart';
 enum QuizMode {
   flashcard,
   multipleChoice,
-  spellingBee,
-  speedRound,
 }
 
 enum AnswerState { unanswered, correct, wrong }
@@ -142,7 +140,6 @@ class QuizEngine {
         );
 
       case QuizMode.multipleChoice:
-      case QuizMode.speedRound:
         final distractors = _pickDistractors(
           correct: definition,
           allWords: allWords,
@@ -159,14 +156,6 @@ class QuizEngine {
           questionText: word.text,
         );
 
-      case QuizMode.spellingBee:
-        return QuizQuestion(
-          word: word,
-          mode: mode,
-          options: const [],
-          correctAnswer: word.text,
-          questionText: word.summary!.definition,
-        );
     }
   }
 

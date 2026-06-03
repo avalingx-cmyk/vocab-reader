@@ -3,6 +3,7 @@ import 'user_level.dart';
 class Word {
   final String id;
   final String text;
+  final String? bookId;
   final String bookName;
   final int? pageNumber;
   final String? context;
@@ -19,6 +20,7 @@ class Word {
   Word({
     required this.id,
     required this.text,
+    this.bookId,
     required this.bookName,
     this.pageNumber,
     this.context,
@@ -37,6 +39,7 @@ class Word {
     return Word(
       id: json['id'] as String,
       text: json['text'] as String,
+      bookId: json['bookId'] as String?,
       bookName: json['bookName'] as String,
       pageNumber: json['pageNumber'] as int?,
       context: json['context'] as String?,
@@ -62,6 +65,7 @@ class Word {
     return {
       'id': id,
       'text': text,
+      'bookId': bookId,
       'bookName': bookName,
       'pageNumber': pageNumber,
       'context': context,
@@ -80,6 +84,7 @@ class Word {
   Word copyWith({
     String? id,
     String? text,
+    String? bookId,
     String? bookName,
     int? pageNumber,
     String? context,
@@ -96,6 +101,7 @@ class Word {
     return Word(
       id: id ?? this.id,
       text: text ?? this.text,
+      bookId: bookId ?? this.bookId,
       bookName: bookName ?? this.bookName,
       pageNumber: pageNumber ?? this.pageNumber,
       context: context ?? this.context,

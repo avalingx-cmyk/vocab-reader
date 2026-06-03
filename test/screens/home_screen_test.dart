@@ -51,7 +51,6 @@ void main() {
 class _FakeSettingsNotifier extends SettingsNotifier {
   _FakeSettingsNotifier() : super(loadFromStorage: false) {
     state = const SettingsState(
-      weeklyGoal: 20,
       isLoading: false,
     );
   }

@@ -32,8 +32,8 @@ void main() {
 
     test('uses AI-generated session when generation succeeds', () async {
       final gateway = _FakeQuizAiGateway(
-        result: AiQuizGenerationResult(
-          questions: const [
+        result: const AiQuizGenerationResult(
+          questions: [
             AiQuizQuestionData(
               wordId: 'w1',
               prompt: 'Choose the best meaning of ephemeral.',
@@ -55,7 +55,6 @@ void main() {
         allWords: words,
         mode: QuizMode.multipleChoice,
         sessionSize: 1,
-        provider: 'cactus',
         localModelId: 'qwen3-0.6b',
       );
 
@@ -63,7 +62,6 @@ void main() {
       expect(result.session, isNotNull);
       expect(result.session!.questions.single.explanation,
           'Ephemeral means brief or short-lived.');
-      expect(gateway.lastConfiguredProvider, 'cactus');
       expect(gateway.lastConfiguredLocalModelId, 'qwen3-0.6b');
     });
 
@@ -81,8 +79,6 @@ void main() {
         allWords: words,
         mode: QuizMode.multipleChoice,
         sessionSize: 3,
-        provider: 'gemini',
-        geminiKey: 'g-key',
         localModelId: 'qwen3-0.6b',
       );
 
@@ -98,17 +94,10 @@ class _FakeQuizAiGateway implements QuizAiGateway {
   _FakeQuizAiGateway({required this.result});
 
   final AiQuizGenerationResult result;
-  String? lastConfiguredProvider;
   String? lastConfiguredLocalModelId;
 
   @override
-  void configure({
-    String? openAIKey,
-    String? geminiKey,
-    String provider = 'gemini',
-    String? localModelId,
-  }) {
-    lastConfiguredProvider = provider;
+  void configure({required String localModelId}) {
     lastConfiguredLocalModelId = localModelId;
   }
 

@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/word.dart';
+import '../providers/model_readiness_provider.dart';
 import '../providers/quiz_provider.dart';
+import '../providers/word_provider.dart';
+import '../services/sync_service.dart';
 import '../theme/app_theme.dart';
 import 'quiz_mode_screen.dart';
 import '../game/quiz_engine.dart';
+import 'settings_screen.dart';
 import 'word_detail_screen.dart';
 
 enum ReviewFilter { due, fresh, weak, mastered }
@@ -26,6 +30,8 @@ class ReviewScreen extends ConsumerWidget {
     final newWords = ref.watch(newStudyWordsProvider);
     final weakWords = ref.watch(weakWordsProvider);
     final masteredWords = ref.watch(masteredWordsProvider);
+    final readiness = ref.watch(modelReadinessProvider);
+    final failedSummaryWords = ref.watch(failedSummaryWordsProvider);
 
     final baseWords = switch (filter) {
       ReviewFilter.due => dueWords,
@@ -57,6 +63,17 @@ class ReviewScreen extends ConsumerWidget {
           const SizedBox(height: 18),
           _ReviewHeroCard(stats: stats),
           const SizedBox(height: 18),
+          if (readiness.status == ModelReadinessStatus.notDownloaded ||
+              readiness.status == ModelReadinessStatus.repairNeeded ||
+              failedSummaryWords.isNotEmpty)
+            _ReviewRecoveryCard(
+              readiness: readiness,
+              failedSummaryCount: failedSummaryWords.length,
+            ),
+          if (readiness.status == ModelReadinessStatus.notDownloaded ||
+              readiness.status == ModelReadinessStatus.repairNeeded ||
+              failedSummaryWords.isNotEmpty)
+            const SizedBox(height: 18),
           Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -213,6 +230,79 @@ class ReviewScreen extends ConsumerWidget {
   }
 }
 
+class _ReviewRecoveryCard extends ConsumerWidget {
+  const _ReviewRecoveryCard({
+    required this.readiness,
+    required this.failedSummaryCount,
+  });
+
+  final ModelReadinessState readiness;
+  final int failedSummaryCount;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final title = failedSummaryCount > 0
+        ? 'Some saved words still need explanations'
+        : readiness.title;
+    final message = failedSummaryCount > 0
+        ? '$failedSummaryCount word(s) are ready to retry once your offline AI is available.'
+        : readiness.message;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              OutlinedButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                ),
+                child: const Text('Open Offline AI Settings'),
+              ),
+              if (failedSummaryCount > 0)
+                FilledButton(
+                  onPressed: () async {
+                    await SyncService.instance.resetFailedWords();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Retrying saved explanations now.'),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('Retry Explanations'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ReviewSortBar extends StatelessWidget {
   final ReviewFilter filter;
   final ReviewSort selected;
@@ -343,16 +433,16 @@ class _ReviewHeroCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      stats.badgeLabel,
-                      style: const TextStyle(
+                    const Text(
+                      'Review Progress',
+                      style: TextStyle(
                         color: Colors.white,
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     Text(
-                      '${stats.streakDays} day streak · ${(stats.accuracy * 100).toInt()}% accuracy',
+                      '${stats.reviewedCount} reviewed · ${(stats.accuracy * 100).toInt()}% accuracy',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.88),
                         fontSize: 13,

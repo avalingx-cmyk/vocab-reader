@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../game/quiz_engine.dart';
@@ -17,10 +16,7 @@ class QuizModeScreen extends ConsumerStatefulWidget {
 }
 
 class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
-  final _spellingController = TextEditingController();
   final _shakeKey = GlobalKey<_ShakeWidgetState>();
-  Timer? _speedTimer;
-  int _secondsLeft = 5;
   String? _selectedAnswer;
   bool _submitted = false;
 
@@ -36,22 +32,7 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
 
   @override
   void dispose() {
-    _speedTimer?.cancel();
-    _spellingController.dispose();
     super.dispose();
-  }
-
-  void _startSpeedTimer() {
-    _speedTimer?.cancel();
-    setState(() => _secondsLeft = 5);
-    _speedTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) { t.cancel(); return; }
-      setState(() => _secondsLeft--);
-      if (_secondsLeft <= 0) {
-        t.cancel();
-        if (!_submitted) _submitAnswer('__timeout__');
-      }
-    });
   }
 
   void _submitAnswer(String answer) {
@@ -60,7 +41,6 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
       _submitted = true;
       _selectedAnswer = answer;
     });
-    _speedTimer?.cancel();
     final isCorrect = ref.read(quizProvider).session?.currentQuestion
         ?.correctAnswer.toLowerCase() == answer.toLowerCase().trim();
     ref.read(quizProvider.notifier).submitAnswer(answer);
@@ -72,8 +52,6 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
         _goToResults(s.session!);
       } else {
         setState(() { _submitted = false; _selectedAnswer = null; });
-        _spellingController.clear();
-        if (widget.mode == QuizMode.speedRound) _startSpeedTimer();
       }
     });
   }
@@ -202,10 +180,6 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
                     label: '${session.streak}🔥',
                     color: Colors.deepOrange,
                   ),
-                if (widget.mode == QuizMode.speedRound) ...[
-                  const Spacer(),
-                  _SpeedTimer(seconds: _secondsLeft),
-                ],
               ],
             ),
           ),
@@ -248,25 +222,11 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
       case QuizMode.flashcard:
         return _FlashcardMode(question: question, quizState: ref.watch(quizProvider));
       case QuizMode.multipleChoice:
-      case QuizMode.speedRound:
-        if (_submitted == false && widget.mode == QuizMode.speedRound &&
-            session.currentIndex == 0 && _secondsLeft == 5 && _speedTimer == null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) => _startSpeedTimer());
-        }
         return _MultipleChoiceMode(
           question: question,
           selectedAnswer: _selectedAnswer,
           submitted: _submitted,
           onAnswer: _submitAnswer,
-          color: _modeColor(widget.mode),
-        );
-      case QuizMode.spellingBee:
-        return _SpellingBeeMode(
-          question: question,
-          controller: _spellingController,
-          submitted: _submitted,
-          selectedAnswer: _selectedAnswer,
-          onSubmit: _submitAnswer,
           color: _modeColor(widget.mode),
         );
     }
@@ -276,8 +236,6 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
     switch (mode) {
       case QuizMode.flashcard: return 'Flashcards';
       case QuizMode.multipleChoice: return 'Multiple Choice';
-      case QuizMode.spellingBee: return 'Spelling Bee';
-      case QuizMode.speedRound: return 'Speed Round';
     }
   }
 
@@ -285,8 +243,6 @@ class _QuizModeScreenState extends ConsumerState<QuizModeScreen> {
     switch (mode) {
       case QuizMode.flashcard: return AppTheme.primaryBlue;
       case QuizMode.multipleChoice: return const Color(0xFF7C3AED);
-      case QuizMode.spellingBee: return const Color(0xFF0891B2);
-      case QuizMode.speedRound: return AppTheme.accentAmber;
     }
   }
 }
@@ -642,170 +598,6 @@ class _OptionTile extends StatelessWidget {
           ),
           if (trailing != null) ...[const SizedBox(width: 8), trailing],
         ]),
-      ),
-    );
-  }
-}
-
-// ── Spelling Bee Mode ─────────────────────────────────────────────────────────
-class _SpellingBeeMode extends StatelessWidget {
-  final QuizQuestion question;
-  final TextEditingController controller;
-  final bool submitted;
-  final String? selectedAnswer;
-  final void Function(String) onSubmit;
-  final Color color;
-
-  const _SpellingBeeMode({
-    required this.question,
-    required this.controller,
-    required this.submitted,
-    required this.selectedAnswer,
-    required this.onSubmit,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isCorrect = submitted &&
-        selectedAnswer?.toLowerCase().trim() ==
-            question.correctAnswer.toLowerCase();
-    final isWrong = submitted && !isCorrect;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Definition card
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'DEFINITION',
-                  style: TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.bold,
-                    color: color, letterSpacing: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  question.word.summary!.definition,
-                  style: const TextStyle(fontSize: 18, height: 1.5),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 32),
-          Text(
-            'Type the word:',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              letterSpacing: 1,
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Input
-          Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isCorrect
-                    ? Colors.green
-                    : isWrong
-                        ? Colors.redAccent
-                        : color.withValues(alpha: 0.3),
-                width: 2,
-              ),
-            ),
-            child: TextField(
-              controller: controller,
-              enabled: !submitted,
-              textCapitalization: TextCapitalization.none,
-              onSubmitted: onSubmit,
-              decoration: InputDecoration(
-                hintText: 'Type your answer...',
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                suffixIcon: submitted
-                    ? Icon(
-                        isCorrect ? Icons.check_circle_rounded : Icons.cancel_rounded,
-                        color: isCorrect ? Colors.green : Colors.redAccent,
-                      )
-                    : null,
-              ),
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-          ),
-          if (isWrong) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Correct: ${question.correctAnswer}',
-              style: const TextStyle(
-                color: Colors.green,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-          ],
-          const SizedBox(height: 24),
-          if (!submitted)
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => onSubmit(controller.text),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: color,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                child: const Text('Submit', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Speed Timer ──────────────────────────────────────────────────────────────
-class _SpeedTimer extends StatelessWidget {
-  final int seconds;
-  const _SpeedTimer({required this.seconds});
-
-  @override
-  Widget build(BuildContext context) {
-    final pct = seconds / 5.0;
-    final color = seconds <= 2 ? Colors.redAccent : AppTheme.accentAmber;
-    return SizedBox(
-      width: 40,
-      height: 40,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          CircularProgressIndicator(
-            value: pct,
-            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-            valueColor: AlwaysStoppedAnimation(color),
-            strokeWidth: 4,
-          ),
-          Text(
-            '$seconds',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: color),
-          ),
-        ],
       ),
     );
   }

@@ -30,10 +30,7 @@ class AdaptiveQuizService {
     required List<Word> allWords,
     required QuizMode mode,
     required int sessionSize,
-    required String provider,
     required String localModelId,
-    String? openAIKey,
-    String? geminiKey,
   }) async {
     final standardSession = QuizEngine.buildSession(
       allWords: allWords,
@@ -41,7 +38,7 @@ class AdaptiveQuizService {
       sessionSize: sessionSize,
     );
 
-    if (mode != QuizMode.multipleChoice && mode != QuizMode.speedRound) {
+    if (mode != QuizMode.multipleChoice) {
       return AdaptiveQuizSessionResult(
         session: standardSession,
         source: QuizSessionSource.standard,
@@ -58,12 +55,7 @@ class AdaptiveQuizService {
 
     final quizWords = eligible.take(sessionSize).toList();
 
-    _aiGateway.configure(
-      openAIKey: openAIKey,
-      geminiKey: geminiKey,
-      provider: provider,
-      localModelId: localModelId,
-    );
+    _aiGateway.configure(localModelId: localModelId);
 
     final generated = await _aiGateway.generateQuizSession(
       words: quizWords,

@@ -57,9 +57,13 @@ class _EditWordScreenState extends ConsumerState<EditWordScreen> {
 
       final textChanged = newText != widget.word.text;
       final shouldRegenerate = textChanged;
+      final book = newBookName == widget.word.bookName && widget.word.bookId != null
+          ? null
+          : await DatabaseService.instance.upsertBook(newBookName);
 
       final updatedWord = widget.word.copyWith(
         text: newText,
+        bookId: book?.id ?? widget.word.bookId,
         bookName: newBookName,
         pageNumber: newPageNumber,
         context: newContext,

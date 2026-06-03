@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'analytics_service.dart';
 import '../services/database_service.dart';
 import '../services/ai_service.dart';
+import 'app_logger.dart';
 import 'cactus_local_service.dart';
 import '../models/user_level.dart';
 import '../models/word.dart';
@@ -30,7 +31,7 @@ class SyncService {
   void _init() {
     ConnectivityChecker.instance.connectivityStream.listen((isOnline) {
       if (isOnline) {
-        print('SyncService: Connectivity restored. Triggering sync...');
+        AppLogger.info('SyncService: Connectivity restored. Triggering sync...');
         processPendingQueue();
       }
     });
@@ -55,7 +56,7 @@ class SyncService {
       if (cactus.isGenerating) {
         cactus.cancelGeneration();
       }
-      print('SyncService: Sync cancellation requested.');
+      AppLogger.info('SyncService: Sync cancellation requested.');
     }
   }
 
@@ -63,7 +64,7 @@ class SyncService {
 
   Future<void> processPendingQueue() async {
     if (_isSyncing) {
-      print('SyncService: Already syncing, skipping.');
+      AppLogger.info('SyncService: Already syncing, skipping.');
       return;
     }
     _isSyncing = true;
@@ -71,19 +72,19 @@ class SyncService {
 
     try {
       lastError = SyncError.none;
-      final provider =
-          await DatabaseService.instance.getSetting('ai_provider') ?? 'gemini';
+      lastErrorMessage = null;
+      const provider = 'cactus';
       final localModelId =
           await DatabaseService.instance.getSetting('cactus_model_id') ??
               CactusLocalService.defaultModelId;
-      print(
-          'SyncService: Starting sync with provider=$provider localModel=$localModelId');
+      AppLogger.info(
+        'SyncService: Starting sync with provider=$provider localModel=$localModelId',
+      );
 
-      // Build AIService with keys from DB, fallback to .env
       final aiService = await _buildAIService();
 
       final queue = await DatabaseService.instance.getPendingQueue();
-      print('SyncService: ${queue.length} item(s) in pending queue.');
+      AppLogger.info('SyncService: ${queue.length} item(s) in pending queue.');
 
       if (queue.isEmpty) {
         _statusCtrl.add(SyncStatus.completed);
@@ -94,9 +95,13 @@ class SyncService {
         final modelPath = await CactusLocalService().getModelPath(localModelId);
         final modelDir = Directory(modelPath);
         if (!await modelDir.exists()) {
-          print('SyncService: Cactus model not found at $modelPath. '
-              'Go to Settings > AI Provider to download it.');
+          AppLogger.info(
+            'SyncService: Local model not found at $modelPath. '
+            'Go to Settings to download it.',
+          );
           lastError = SyncError.localModelMissing;
+          lastErrorMessage =
+              'Download the offline AI in Settings before generating explanations.';
           _statusCtrl.add(SyncStatus.error);
           return;
         }
@@ -105,8 +110,10 @@ class SyncService {
       await _prewarmSelectedModel(provider, localModelId);
 
       if (!aiService.isConfigured) {
-        print('SyncService: AIService is not configured. Aborting.');
+        AppLogger.info('SyncService: AIService is not configured. Aborting.');
         lastError = SyncError.notConfigured;
+        lastErrorMessage =
+            'Download the offline AI in Settings before generating explanations.';
         _statusCtrl.add(SyncStatus.error);
         return;
       }
@@ -117,16 +124,17 @@ class SyncService {
       int totalFailCount = 0;
       int retryPass = 0;
 
-      while (true) {
-        if (_isCancelled) {
-          print(
-              'SyncService: Sync cancelled. Processed $processedCount/${queue.length} before cancellation.');
+        while (true) {
+          if (_isCancelled) {
+          AppLogger.info(
+            'SyncService: Sync cancelled. Processed $processedCount/${queue.length} before cancellation.',
+          );
           break;
         }
 
         final currentQueue = await DatabaseService.instance.getPendingQueue();
         if (currentQueue.isEmpty) {
-          print('SyncService: Queue is empty.');
+          AppLogger.info('SyncService: Queue is empty.');
           break;
         }
 
@@ -136,7 +144,7 @@ class SyncService {
         }).toList();
 
         if (processable.isEmpty) {
-          print('SyncService: All remaining items exceed max retries.');
+          AppLogger.info('SyncService: All remaining items exceed max retries.');
           break;
         }
 
@@ -163,7 +171,7 @@ class SyncService {
               passFailCount++;
             }
           } catch (e) {
-            print('SyncService: Exception on word $wordId: $e');
+            AppLogger.info('SyncService: Exception on word $wordId: $e');
             await _incrementRetry(wordId);
             passFailCount++;
           }
@@ -181,28 +189,38 @@ class SyncService {
 
         retryPass++;
         final backoff = Duration(seconds: min(pow(2, retryPass).toInt(), 30));
-        print(
-            'SyncService: $passFailCount item(s) failed, retry pass $retryPass. '
-            'Waiting ${backoff.inSeconds}s...');
+        AppLogger.info(
+          'SyncService: $passFailCount item(s) failed, retry pass $retryPass. '
+          'Waiting ${backoff.inSeconds}s...',
+        );
         await Future.delayed(backoff);
       }
 
       if (_isCancelled) {
-        print('SyncService: Sync was cancelled by user.');
+        AppLogger.info('SyncService: Sync was cancelled by user.');
         _statusCtrl.add(SyncStatus.idle);
       } else if (totalFailCount > 0 && provider == 'cactus') {
         lastError = SyncError.localModelMissing;
         lastErrorMessage = '$totalFailCount word(s) failed to generate. '
             'The Cactus model may have produced invalid output. '
-            'Check logs or try Gemini/OpenAI.';
-        print('SyncService: $totalFailCount Cactus item(s) failed.');
+            'Try repairing the local model in Settings.';
+        AppLogger.info('SyncService: $totalFailCount local item(s) failed.');
+        await LocalAnalyticsService.instance.track(
+          'summary.generation_failed',
+          payload: {'failedCount': totalFailCount},
+        );
       }
 
-      print(
-          'SyncService: Done. $processedCount/${queue.length} processed successfully.');
+      AppLogger.info(
+        'SyncService: Done. $processedCount/${queue.length} processed successfully.',
+      );
       _statusCtrl.add(SyncStatus.completed);
     } catch (e) {
-      print('SyncService: Fatal error: $e');
+      AppLogger.info('SyncService: Fatal error: $e');
+      await LocalAnalyticsService.instance.recordError(
+        scope: 'sync.process_pending_queue',
+        error: e,
+      );
       final errStr = e.toString();
       if (errStr.contains('Connection') || errStr.contains('SocketException')) {
         lastError = SyncError.networkError;
@@ -236,46 +254,20 @@ class SyncService {
       }
     }
 
-    print(
-        'SyncService: Re-queued $resetCount word(s) without summaries. Starting queue processing...');
+    AppLogger.info(
+      'SyncService: Re-queued $resetCount word(s) without summaries. Starting queue processing...',
+    );
     processPendingQueue();
   }
 
-  // ─── Build AIService ──────────────────────────────────────────────────────
-
   Future<AIService> _buildAIService() async {
-    final provider =
-        await DatabaseService.instance.getSetting('ai_provider') ?? 'gemini';
     final localModel =
         await DatabaseService.instance.getSetting('cactus_model_id') ??
             CactusLocalService.defaultModelId;
-    // Key names must match what settings_provider.dart uses to save them
-    String? openAIKey = await DatabaseService.instance.getSetting('openai_key');
-    String? geminiKey = await DatabaseService.instance.getSetting('gemini_key');
-
-    // Fallback to .env
-    if (openAIKey == null || openAIKey.isEmpty) {
-      openAIKey = dotenv.env['OPENAI_API_KEY'];
-    }
-    if (geminiKey == null || geminiKey.isEmpty) {
-      geminiKey = dotenv.env['GEMINI_API_KEY'];
-    }
-
-    final activeKey = (provider == 'gemini' ? geminiKey : openAIKey) ?? '';
-    final keyPreview = activeKey.length > 8
-        ? '${activeKey.substring(0, 4)}...${activeKey.substring(activeKey.length - 4)}'
-        : (activeKey.isEmpty ? 'none' : 'short/invalid');
-
-    print(
-        'SyncService: provider=$provider localModel=$localModel activeKey=$keyPreview');
+    AppLogger.info('SyncService: localModel=$localModel');
 
     final service = AIService();
-    service.configure(
-      openAIKey: openAIKey,
-      geminiKey: geminiKey,
-      provider: provider,
-      localModelId: localModel,
-    );
+    service.configure(localModelId: localModel);
     return service;
   }
 
@@ -292,8 +284,9 @@ class SyncService {
     }
 
     if (retryCount >= 3) {
-      print(
-          'SyncService: Max retries ($retryCount) for "${word.text}". Marking as not-pending.');
+      AppLogger.info(
+        'SyncService: Max retries ($retryCount) for "${word.text}". Marking as not-pending.',
+      );
       await DatabaseService.instance.updateWord(
         word.copyWith(isPending: false, updatedAt: DateTime.now()),
       );
@@ -304,19 +297,22 @@ class SyncService {
     // Exponential back-off on retries
     if (retryCount > 0) {
       final wait = Duration(seconds: pow(2, retryCount).toInt());
-      print(
-          'SyncService: Retry $retryCount – waiting ${wait.inSeconds}s for "${word.text}".');
+      AppLogger.info(
+        'SyncService: Retry $retryCount - waiting ${wait.inSeconds}s for "${word.text}".',
+      );
       await Future.delayed(wait);
     }
 
-    print('SyncService: Requesting summary for "${word.text}"...');
-    final isLocal =
-        await DatabaseService.instance.getSetting('ai_provider') == 'cactus';
+    AppLogger.info('SyncService: Requesting summary for "${word.text}"...');
+    final level = UserLevel.fromString(
+      await DatabaseService.instance.getSetting('user_level') ??
+          UserLevel.beginner.name,
+    );
     final summary = await aiService.generateSummary(
       word: word.text,
       context: word.context,
-      level: UserLevel.beginner,
-      keepAlive: isLocal && retryCount < 2,
+      level: level,
+      keepAlive: retryCount < 2,
     );
 
     if (summary != null) {
@@ -328,12 +324,24 @@ class SyncService {
             updatedAt: DateTime.now()),
       );
       await DatabaseService.instance.removeFromQueue(wordId);
-      print('SyncService: ✓ Summary saved for "${word.text}".');
+      AppLogger.info('SyncService: Summary saved for "${word.text}".');
+      await LocalAnalyticsService.instance.track(
+        'summary.generated',
+        payload: {'wordId': word.id},
+      );
       return true;
     } else {
       await _incrementRetry(wordId);
-      print(
-          'SyncService: ✗ Summary failed for "${word.text}" (retry ${retryCount + 1}).');
+      AppLogger.info(
+        'SyncService: Summary failed for "${word.text}" (retry ${retryCount + 1}).',
+      );
+      await LocalAnalyticsService.instance.track(
+        'summary.generation_failed',
+        payload: {
+          'wordId': word.id,
+          'retryCount': retryCount + 1,
+        },
+      );
       return false;
     }
   }
@@ -355,9 +363,9 @@ class SyncService {
     if (provider == 'cactus') {
       final result = await CactusLocalService().initialize(modelId);
       if (!result.isSuccess) {
-        print('SyncService: Cactus prewarm skipped: ${result.message}');
+        AppLogger.info('SyncService: Cactus prewarm skipped: ${result.message}');
       } else {
-        print('SyncService: Cactus model prewarmed: $modelId');
+        AppLogger.info('SyncService: Cactus model prewarmed: $modelId');
       }
     }
   }
