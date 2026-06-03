@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'package:archive/archive.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
+import 'app_logger.dart';
 import 'cactus_worker.dart';
-import 'cactus_ffi.dart' as cactus;
 
 enum CactusAiError {
   none,
@@ -62,7 +62,7 @@ class CactusModelConfig {
   String get downloadUrl =>
       'https://huggingface.co/$repoId/resolve/main/';
 
-  String get zipUrl => '${downloadUrl}${weightDirName}/$zipFilename';
+  String get zipUrl => '$downloadUrl$weightDirName/$zipFilename';
 
   String get configUrl => '${downloadUrl}config.json';
 }
@@ -93,7 +93,7 @@ class CactusLocalService {
 
   bool get isInitialized => _isInitialized;
   bool get isGenerating => _isGenerating;
-  bool get isNativeLibraryAvailable => true;
+  bool get isNativeLibraryAvailable => Platform.isAndroid;
 
   CactusModelConfig getModelConfig(String id) {
     return availableModels.firstWhere(
@@ -268,43 +268,42 @@ class CactusLocalService {
     }
   }
 
-  bool _libraryCheck() {
-    try {
-      cactus.lastError();
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
   Future<CactusAiResult> initialize(String modelId) async {
     if (_isInitialized && _currentModelId == modelId) {
       return const CactusAiResult(text: 'ok');
     }
 
     try {
+      if (!Platform.isAndroid) {
+        return const CactusAiResult(
+          error: CactusAiError.libraryUnavailable,
+          message:
+              'Local AI is currently supported on Android only in this build.',
+        );
+      }
+
       await unloadModel();
 
       final path = await getModelPath(modelId);
       final dir = Directory(path);
       if (!await dir.exists()) {
-        return CactusAiResult(
+        return const CactusAiResult(
           error: CactusAiError.modelNotFound,
-          message:
-              'Model not found at $path. Download it from Settings.',
+          message: 'Model not found. Download it from Settings.',
         );
       }
 
       final configFile = File('$path/config.json');
       if (!await configFile.exists()) {
-        return CactusAiResult(
+        return const CactusAiResult(
           error: CactusAiError.modelIncomplete,
           message: 'Model incomplete (no config.json). Re-download.',
         );
       }
 
-      print('CactusLocalService: Initializing model $modelId '
-          'from $path...');
+      AppLogger.info(
+        'CactusLocalService: Initializing model $modelId from $path...',
+      );
 
       await _worker.start();
       final result = await _worker.init(path);
@@ -317,11 +316,12 @@ class CactusLocalService {
 
       _currentModelId = modelId;
       _isInitialized = true;
-      print(
-          'CactusLocalService: Model $modelId loaded successfully.');
+      AppLogger.info(
+        'CactusLocalService: Model $modelId loaded successfully.',
+      );
       return const CactusAiResult(text: 'ok');
     } catch (e) {
-      print('CactusLocalService: Init error: $e');
+      AppLogger.info('CactusLocalService: Init error: $e');
       return CactusAiResult(
         error: CactusAiError.loadFailed,
         message: 'Init failed: $e',
@@ -369,8 +369,7 @@ class CactusLocalService {
       };
       final optionsJson = jsonEncode(options);
 
-      print(
-          'CactusLocalService: Calling cactusComplete...');
+      AppLogger.info('CactusLocalService: Calling cactusComplete...');
 
       final responseJson = await _worker.generate(
           messagesJson, optionsJson);
@@ -448,7 +447,7 @@ class CactusLocalService {
     _isInitialized = false;
     _currentModelId = null;
     _isGenerating = false;
-    print('CactusLocalService: Model unloaded.');
+    AppLogger.info('CactusLocalService: Model unloaded.');
   }
 
   Future<bool> deleteModel(String modelId) async {

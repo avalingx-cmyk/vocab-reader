@@ -14,7 +14,7 @@ class BookDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final wordsAsync = ref.watch(wordListProvider(book.name));
+    final wordsAsync = ref.watch(wordListProvider(book.id));
     final words = wordsAsync.valueOrNull ?? [];
 
     return Scaffold(

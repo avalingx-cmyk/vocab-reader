@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../models/word.dart';
-import '../models/user_level.dart';
 import '../providers/word_provider.dart';
 import '../providers/book_provider.dart';
+import '../providers/model_readiness_provider.dart';
+import '../providers/settings_provider.dart';
+import '../services/analytics_service.dart';
 import '../services/database_service.dart';
 import '../services/sync_service.dart';
 import '../theme/app_theme.dart';
@@ -25,6 +27,7 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
 
   bool _isLoading = false;
   bool _isNewBook = false;
+  String? _selectedBookId;
   String? _selectedBook;
 
   @override
@@ -41,9 +44,15 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final settings = ref.read(settingsProvider);
+      final modelState = ref.read(modelReadinessProvider);
+      final book = _selectedBookId != null
+          ? null
+          : await DatabaseService.instance.upsertBook(_bookController.text);
       final word = Word(
         id: const Uuid().v4(),
         text: _wordController.text.trim(),
+        bookId: _selectedBookId ?? book!.id,
         bookName: _bookController.text.trim(),
         pageNumber: _pageController.text.isNotEmpty
             ? int.tryParse(_pageController.text)
@@ -51,7 +60,7 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
         context: _contextController.text.trim().isNotEmpty
             ? _contextController.text.trim()
             : null,
-        userLevel: UserLevel.beginner,
+        userLevel: settings.userLevel,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         isPending: true,
@@ -59,22 +68,44 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
 
       await DatabaseService.instance.addWord(word);
       await DatabaseService.instance.addToQueue(word.id);
+      await LocalAnalyticsService.instance.track(
+        'word.added',
+        payload: {
+          'bookId': word.bookId,
+          'hasContext': word.context != null,
+          'learnerLevel': word.userLevel.name,
+        },
+      );
       
       ref.read(wordRefreshProvider.notifier).refresh();
       ref.invalidate(bookListProvider);
 
-      SyncService.instance.processPendingQueue();
+      if (modelState.isReady) {
+        SyncService.instance.processPendingQueue();
+      }
 
       if (mounted) {
+        final message = switch (modelState.status) {
+          ModelReadinessStatus.ready =>
+            'Word saved. BookBeam is creating the explanation now.',
+          ModelReadinessStatus.unsupported =>
+            'Word saved. Local AI works on Android in this build, so the explanation will stay pending here.',
+          _ =>
+            'Word saved. Download the offline AI in Settings to create the explanation.',
+        };
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Word captured! Summarizing with AI...'),
+          SnackBar(
+            content: Text(message),
             backgroundColor: AppTheme.primaryBlue,
-          )
+          ),
         );
         Navigator.of(context).pop();
       }
     } catch (e) {
+      await LocalAnalyticsService.instance.recordError(
+        scope: 'word.add',
+        error: e,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent)
@@ -135,15 +166,18 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
                         selectedBook: _selectedBook,
                         onSelected: (v) {
                           if (v != null) {
+                            final selected = books.firstWhere((b) => b.id == v);
                             setState(() {
-                              _selectedBook = v;
-                              _bookController.text = v;
+                              _selectedBookId = selected.id;
+                              _selectedBook = selected.name;
+                              _bookController.text = selected.name;
                             });
                           }
                         },
                         onAddNew: () => setState(() {
                           _isNewBook = true;
                           _bookController.clear();
+                          _selectedBookId = null;
                           _selectedBook = null;
                         }),
                       );
@@ -418,7 +452,7 @@ class _BookPickerSheet extends StatelessWidget {
                 final book = books[index];
                 final isSelected = book.name == selectedBook;
                 return InkWell(
-                  onTap: () => onSelected(book.name),
+                  onTap: () => onSelected(book.id),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                     child: Row(

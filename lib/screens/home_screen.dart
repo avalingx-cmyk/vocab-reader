@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/word.dart';
+import '../providers/model_readiness_provider.dart';
 import '../providers/word_provider.dart';
 import '../providers/connectivity_provider.dart';
 import '../services/sync_service.dart';
@@ -39,22 +40,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         if (mounted) {
           final reason = SyncService.instance.lastError;
           final errMsg = SyncService.instance.lastErrorMessage;
+          if (reason == SyncError.localModelMissing) {
+            ref
+                .read(modelReadinessProvider.notifier)
+                .markGenerationFailure(errMsg);
+          }
           String msg;
           switch (reason) {
             case SyncError.notConfigured:
-              msg = 'AI not configured. Add an API key in Settings.';
+              msg = 'Pick a local model in Settings before generating summaries.';
               break;
             case SyncError.localModelMissing:
               msg = errMsg ??
-                  'Cactus model unavailable or generation failed. Check Settings.';
+                  'Local model unavailable or generation failed. Check Settings.';
               break;
             case SyncError.networkError:
               msg = 'Network error. Please check your internet connection.';
               break;
             case SyncError.unknown:
             default:
-              msg =
-                  'Sync failed. Check your API key or model download in Settings.';
+              msg = 'Sync failed. Check your local model status in Settings.';
           }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -356,30 +361,43 @@ class WordsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final words = ref.watch(filteredWordsProvider(null));
     final searchQuery = ref.watch(wordSearchProvider);
+    final readiness = ref.watch(modelReadinessProvider);
+    final failedSummaryWords = ref.watch(failedSummaryWordsProvider);
+    final wordsNeedingSummary = ref.watch(wordsNeedingSummaryProvider);
 
     if (words.isEmpty) {
       final allWords = ref.watch(wordListProvider(null)).valueOrNull ?? [];
       if (allWords.isEmpty) {
-        return _buildEmptyState(context);
+        return _buildEmptyState(context, readiness);
       }
       return searchQuery.isNotEmpty
           ? _buildNoResults(context, searchQuery)
-          : _buildEmptyState(context);
+          : _buildEmptyState(context, readiness);
     }
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-      itemCount: words.length + 1,
+      itemCount: words.length + 2,
       itemBuilder: (context, index) {
         if (index == 0) {
+          return _RecoveryBanner(
+            readiness: readiness,
+            failedSummaryCount: failedSummaryWords.length,
+            pendingSummaryCount: wordsNeedingSummary.length,
+          );
+        }
+        if (index == 1) {
           return _DashboardHeader(words: words);
         }
-        return _WordCard(word: words[index - 1]);
+        return _WordCard(word: words[index - 2]);
       },
     );
   }
 
-  Widget _buildEmptyState(BuildContext context) {
+  Widget _buildEmptyState(
+    BuildContext context,
+    ModelReadinessState readiness,
+  ) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -397,7 +415,14 @@ class WordsTab extends ConsumerWidget {
                 style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 12),
             Text(
-              'Add words you discover while reading to build your personal lexicon.',
+              switch (readiness.status) {
+                ModelReadinessStatus.notDownloaded =>
+                  'Download the offline AI in Settings, then start capturing new words from your reading.',
+                ModelReadinessStatus.unsupported =>
+                  'You can still save words here, but offline AI summaries are only available on Android in this build.',
+                _ =>
+                  'Add words you discover while reading to build your personal lexicon.',
+              },
               style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant),
               textAlign: TextAlign.center,
@@ -456,7 +481,10 @@ class _DashboardHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final int wordsCount = words.length;
-    final int booksCount = words.map((w) => w.bookName).toSet().length;
+    final int booksCount = words
+        .map((w) => w.bookId ?? w.bookName.toLowerCase())
+        .toSet()
+        .length;
     final int dueToday = words
         .where((w) =>
             w.summary != null &&
@@ -881,6 +909,116 @@ class _DashboardSurfaceCard extends StatelessWidget {
         ],
       ),
       child: child,
+    );
+  }
+}
+
+class _RecoveryBanner extends ConsumerWidget {
+  const _RecoveryBanner({
+    required this.readiness,
+    required this.failedSummaryCount,
+    required this.pendingSummaryCount,
+  });
+
+  final ModelReadinessState readiness;
+  final int failedSummaryCount;
+  final int pendingSummaryCount;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final showModelCard = readiness.status == ModelReadinessStatus.notDownloaded ||
+        readiness.status == ModelReadinessStatus.repairNeeded ||
+        readiness.status == ModelReadinessStatus.unsupported;
+    final showRetryCard = failedSummaryCount > 0;
+
+    if (!showModelCard && !showRetryCard) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      children: [
+        if (showModelCard)
+          _BannerCard(
+            title: readiness.title,
+            message: readiness.message,
+            actionLabel: 'Open Settings',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
+          ),
+        if (showRetryCard)
+          _BannerCard(
+            title: 'Retry pending explanations',
+            message: pendingSummaryCount == failedSummaryCount
+                ? '$failedSummaryCount saved word(s) still need explanations.'
+                : '$failedSummaryCount explanation(s) failed and can be retried now.',
+            actionLabel: 'Retry Now',
+            onTap: () async {
+              await SyncService.instance.resetFailedWords();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('BookBeam is retrying your saved explanations.'),
+                  ),
+                );
+              }
+            },
+          ),
+      ],
+    );
+  }
+}
+
+class _BannerCard extends StatelessWidget {
+  const _BannerCard({
+    required this.title,
+    required this.message,
+    required this.actionLabel,
+    required this.onTap,
+  });
+
+  final String title;
+  final String message;
+  final String actionLabel;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppTheme.primaryBlue.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: onTap,
+              child: Text(actionLabel),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

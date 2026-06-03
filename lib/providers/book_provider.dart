@@ -4,50 +4,40 @@ import '../services/database_service.dart';
 
 /// Provider that fetches all unique book names from the database
 final bookListProvider = FutureProvider<List<BookInfo>>((ref) async {
+  final books = await DatabaseService.instance.getBooks();
   final words = await DatabaseService.instance.getWords();
-
-  // Group words by book name
-  final bookMap = <String, List<Word>>{};
+  final pendingByBook = <String, int>{};
   for (final word in words) {
-    bookMap.putIfAbsent(word.bookName, () => []);
-    bookMap[word.bookName]!.add(word);
+    if (word.bookId == null || !word.isPending) continue;
+    pendingByBook[word.bookId!] = (pendingByBook[word.bookId!] ?? 0) + 1;
   }
 
-  // Create book info list
-  final books = bookMap.entries.map((entry) {
-    final bookWords = entry.value;
-    final pendingCount = bookWords.where((w) => w.isPending).length;
-    final lastAccessed = bookWords
-        .map((w) => w.updatedAt)
-        .reduce((a, b) => a.isAfter(b) ? a : b);
-
-    return BookInfo(
-      name: entry.key,
-      wordCount: bookWords.length,
-      pendingCount: pendingCount,
-      lastAccessed: lastAccessed,
-    );
-  }).toList();
-
-  // Sort by last accessed descending
-  books.sort((a, b) => b.lastAccessed.compareTo(a.lastAccessed));
-
-  return books;
+  return books
+      .map((book) => BookInfo(
+            id: book.id,
+            name: book.name,
+            wordCount: book.wordCount,
+            pendingCount: pendingByBook[book.id] ?? 0,
+            lastAccessed: book.lastAccessed,
+          ))
+      .toList();
 });
 
 /// Provider that fetches words for a specific book
-final bookWordsProvider = FutureProvider.family<List<Word>, String>((ref, bookName) async {
-  return await DatabaseService.instance.getWords(bookName: bookName);
+final bookWordsProvider = FutureProvider.family<List<Word>, String>((ref, bookId) async {
+  return await DatabaseService.instance.getWords(bookId: bookId);
 });
 
 /// Model for book information
 class BookInfo {
+  final String id;
   final String name;
   final int wordCount;
   final int pendingCount;
   final DateTime lastAccessed;
 
   BookInfo({
+    required this.id,
     required this.name,
     required this.wordCount,
     required this.pendingCount,

@@ -17,8 +17,6 @@ class QuizResultsScreen extends StatelessWidget {
     switch (mode) {
       case QuizMode.flashcard: return AppTheme.primaryBlue;
       case QuizMode.multipleChoice: return const Color(0xFF7C3AED);
-      case QuizMode.spellingBee: return const Color(0xFF0891B2);
-      case QuizMode.speedRound: return AppTheme.accentAmber;
     }
   }
 
@@ -33,8 +31,6 @@ class QuizResultsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pct = session.accuracy;
-    final xp = session.xpEarned;
-
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
@@ -105,34 +101,6 @@ class QuizResultsScreen extends StatelessWidget {
 
               const SizedBox(height: 20),
 
-              // XP Earned
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF22C55E).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: const Color(0xFF22C55E).withValues(alpha: 0.3),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.bolt_rounded, color: Color(0xFF22C55E), size: 24),
-                    const SizedBox(width: 8),
-                    Text(
-                      '+$xp XP Earned',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                        color: Color(0xFF22C55E),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Accuracy bar
               const SizedBox(height: 24),
               Align(
                 alignment: Alignment.centerLeft,
@@ -255,7 +223,7 @@ class QuizResultsScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  child: const Text('Choose Another Mode'),
+                  child: const Text('Back to Games'),
                 ),
               ),
               const SizedBox(height: 24),

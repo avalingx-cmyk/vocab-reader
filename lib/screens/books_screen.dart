@@ -214,7 +214,7 @@ class BooksScreen extends ConsumerWidget {
             onPressed: () async {
               final newName = controller.text.trim();
               if (newName.isNotEmpty && newName != book.name) {
-                await _renameBook(context, ref, book.name, newName);
+                await _renameBook(context, ref, book.id, newName);
               }
               if (context.mounted) Navigator.of(context).pop();
             },
@@ -225,12 +225,14 @@ class BooksScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _renameBook(BuildContext context, WidgetRef ref, String oldName, String newName) async {
+  Future<void> _renameBook(
+    BuildContext context,
+    WidgetRef ref,
+    String bookId,
+    String newName,
+  ) async {
     try {
-      final words = await DatabaseService.instance.getWords(bookName: oldName);
-      for (final word in words) {
-        await DatabaseService.instance.updateWord(word.copyWith(bookName: newName, updatedAt: DateTime.now()));
-      }
+      await DatabaseService.instance.renameBook(bookId, newName);
       ref.invalidate(bookListProvider);
       ref.read(wordRefreshProvider.notifier).refresh();
       if (context.mounted) {
@@ -265,11 +267,7 @@ class BooksScreen extends ConsumerWidget {
 
   Future<void> _deleteBook(BuildContext context, WidgetRef ref, BookInfo book) async {
     try {
-      final words = await DatabaseService.instance.getWords(bookName: book.name);
-      for (final word in words) {
-        if (word.isPending) await DatabaseService.instance.removeFromQueue(word.id);
-        await DatabaseService.instance.deleteWord(word.id);
-      }
+      await DatabaseService.instance.deleteBookAndWords(book.id);
       ref.invalidate(bookListProvider);
       ref.read(wordRefreshProvider.notifier).refresh();
       if (context.mounted) {
@@ -288,9 +286,13 @@ class BooksScreen extends ConsumerWidget {
     final now = DateTime.now();
     final diff = now.difference(date);
     if (diff.inDays == 0) {
-      if (diff.inHours == 0) return '${diff.inMinutes}m ago';
+      if (diff.inHours == 0) {
+        return '${diff.inMinutes}m ago';
+      }
       return '${diff.inHours}h ago';
-    } else if (diff.inDays == 1) return 'Yesterday';
+    } else if (diff.inDays == 1) {
+      return 'Yesterday';
+    }
     return '${date.day}/${date.month}/${date.year}';
   }
 }

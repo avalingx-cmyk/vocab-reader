@@ -8,7 +8,6 @@ void main() {
     test('defaults settings to cactus provider', () {
       const state = SettingsState();
 
-      expect(state.aiProvider, 'cactus');
       expect(state.cactusModelId, 'qwen3-0.6b');
     });
 
@@ -17,12 +16,12 @@ void main() {
       expect(CactusLocalService.availableModels.single.id, 'qwen3-0.6b');
     });
 
-    test('does not treat local provider as configured', () {
+    test('treats configured local model as ready', () {
       final service = AIService();
 
-      service.configure(provider: 'local', localModelId: 'qwen');
+      service.configure(localModelId: 'qwen3-0.6b');
 
-      expect(service.isConfigured, isFalse);
+      expect(service.isConfigured, isTrue);
     });
   });
 }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/user_level.dart';
+import '../services/analytics_service.dart';
 import '../services/database_service.dart';
 import 'home_screen.dart';
 import '../theme/app_theme.dart';
@@ -12,12 +14,19 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 }
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
+  UserLevel _selectedLevel = UserLevel.beginner;
+
   void _completeOnboarding() async {
     await DatabaseService.instance.setSetting(
       'user_level',
-      'beginner',
+      _selectedLevel.name,
     );
+    await DatabaseService.instance.clearLegacyAiSettings();
     await DatabaseService.instance.setSetting('onboarding_complete', 'true');
+    await LocalAnalyticsService.instance.track(
+      'onboarding.completed',
+      payload: {'learnerLevel': _selectedLevel.name},
+    );
     
     if (mounted) {
       Navigator.of(context).pushReplacement(
@@ -134,65 +143,52 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 48),
-          _buildFeatureCard(
-            icon: Icons.bolt_rounded,
-            title: 'AI-Powered Insights',
-            desc: 'Get smart summaries and use cases instantly.',
-          ),
-          const SizedBox(height: 16),
-          _buildFeatureCard(
-            icon: Icons.layers_rounded,
-            title: 'Clear Explanations',
-            desc: 'Balanced summaries tuned for everyday learning.',
+          RadioGroup<UserLevel>(
+            groupValue: _selectedLevel,
+            onChanged: (value) {
+              if (value != null) {
+                setState(() => _selectedLevel = value);
+              }
+            },
+            child: Column(
+              children: UserLevel.values.map(
+                (level) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _buildLevelCard(level),
+                ),
+              ).toList(),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFeatureCard({required IconData icon, required String title, required String desc}) {
+  Widget _buildLevelCard(UserLevel level) {
+    final selected = level == _selectedLevel;
     return Container(
-      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Theme.of(context).colorScheme.surface, width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: selected ? AppTheme.primaryBlue : Theme.of(context).dividerColor,
+          width: selected ? 2 : 1,
+        ),
       ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.primaryBlue.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: AppTheme.primaryBlue, size: 24),
+      child: RadioListTile<UserLevel>(
+        value: level,
+        activeColor: AppTheme.primaryBlue,
+        title: Text(
+          level.displayName,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(
+          level.description,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontSize: 12,
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  desc,
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

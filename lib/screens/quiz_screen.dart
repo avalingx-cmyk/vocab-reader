@@ -36,29 +36,11 @@ class _ModeSelectionView extends ConsumerWidget {
       const _ModeInfo(
         mode: QuizMode.multipleChoice,
         title: 'Multiple Choice',
-        subtitle: 'Pick the right definition',
+        subtitle: 'AI-built questions from your words',
         icon: Icons.checklist_rounded,
         color: Color(0xFF7C3AED),
         difficulty: 'Medium',
         duration: '~4 min',
-      ),
-      const _ModeInfo(
-        mode: QuizMode.spellingBee,
-        title: 'Spelling Bee',
-        subtitle: 'Type the word from its meaning',
-        icon: Icons.spellcheck_rounded,
-        color: Color(0xFF0891B2),
-        difficulty: 'Hard',
-        duration: '~5 min',
-      ),
-      const _ModeInfo(
-        mode: QuizMode.speedRound,
-        title: 'Speed Round',
-        subtitle: '5 seconds per question!',
-        icon: Icons.bolt_rounded,
-        color: AppTheme.accentAmber,
-        difficulty: 'Hard',
-        duration: '~2 min',
       ),
     ];
 

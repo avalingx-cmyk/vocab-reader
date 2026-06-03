@@ -1,66 +1,51 @@
-# BookBeam 📚
+# BookBeam
 
-A Flutter mobile app for learning vocabulary from books with AI-powered summaries.
+BookBeam is a Flutter vocabulary app for readers. You capture unfamiliar words from books, generate offline AI explanations with the bundled local Cactus model, and review them later with flashcards or adaptive multiple-choice quizzes.
 
-## Features
+## What the app does
 
-- 📖 **Book-based vocabulary tracking** - Save words with book name & page number
-- 🤖 **AI-generated summaries** - Auto-generate definitions, meanings, use cases
-- 🎯 **User-level adaptation** - Content adapts to Beginner/Intermediate/Advanced/Pro levels
-- 🔗 **Similar words** - Learn synonyms and related vocabulary
-- 📱 **Fully offline** - Works without internet (AI summaries queued when offline)
+- Save words with book, page, and reading context
+- Pick a learner level during onboarding and use it for future AI summaries
+- Store words and books locally in SQLite
+- Generate local AI summaries with the finalized `qwen3-0.6b` model
+- Review words with flashcards and AI-generated adaptive multiple choice
 
-## Tech Stack
+## Current product shape
 
-- **Framework:** Flutter + Dart
-- **State Management:** Riverpod
-- **Database:** SQLite (sqflite)
-- **AI:** OpenAI API / Google Gemini
+- AI path: local-only Cactus model
+- Book data: real `books` table with `words.book_id`
+- Quiz modes kept: flashcards and multiple choice
+- No account required for v1
+- Platform support: Android is the supported platform for full offline AI in this build
 
-## Project Structure
+## Tech stack
 
-```
-lib/
-├── main.dart                 # App entry point
-├── models/                   # Data models
-│   ├── word.dart
-│   ├── book.dart
-│   └── user_level.dart
-├── screens/                  # UI screens
-│   ├── home_screen.dart
-│   ├── add_word_screen.dart
-│   ├── word_detail_screen.dart
-│   ├── word_list_screen.dart
-│   └── onboarding_screen.dart
-├── widgets/                  # Reusable widgets
-│   ├── word_card.dart
-│   ├── level_selector.dart
-│   └── summary_card.dart
-├── services/                 # Business logic
-│   ├── database_service.dart
-│   ├── ai_service.dart
-│   └── sync_service.dart
-└── utils/                    # Helpers
-    ├── constants.dart
-    └── extensions.dart
-```
+- Flutter + Dart
+- Riverpod
+- SQLite via `sqflite`
+- Dio for model download
+- Local FFI-backed Cactus runtime
 
 ## Setup
 
-1. Install Flutter: https://flutter.dev/docs/get-started/install
-2. Run `flutter pub get`
-3. Add API keys to `.env`:
-   ```
-   OPENAI_API_KEY=your_key_here
-   # OR
-   GEMINI_API_KEY=your_key_here
-   ```
-4. Run `flutter run`
+1. Install Flutter and Android tooling.
+2. Run `flutter pub get`.
+3. Run `flutter test` to verify the project.
+4. Launch with `flutter run`.
+5. Open Settings in the app and download the local model if it is not already present.
 
-## Screenshots
+## Local AI notes
 
-Coming soon...
+- The app no longer requires API keys or `.env` configuration for summaries.
+- The local model download is managed from Settings.
+- If generation fails, use the Settings repair flow to remove and re-download the model.
 
----
+## Development checks
 
-**Built with ❤️ by Monkey D. Luffy**
+- `flutter test`
+- `flutter analyze lib test`
+- `flutter build apk --debug`
+
+## Release readiness
+
+- Follow [RELEASE_CHECKLIST.md](C:/Users/selva/Desktop/Work/vocab-reader/RELEASE_CHECKLIST.md) for fresh-install QA, recovery testing, and signed Android release steps.

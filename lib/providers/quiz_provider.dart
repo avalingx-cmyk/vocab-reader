@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../game/quiz_engine.dart';
 import '../models/word.dart';
+import '../services/analytics_service.dart';
 import '../services/database_service.dart';
 import '../services/adaptive_quiz_service.dart';
 import '../providers/word_provider.dart';
@@ -53,8 +54,6 @@ class ReviewStats {
   final int weakCount;
   final int reviewedCount;
   final double accuracy;
-  final int streakDays;
-  final String badgeLabel;
 
   const ReviewStats({
     required this.dueCount,
@@ -63,8 +62,6 @@ class ReviewStats {
     required this.weakCount,
     required this.reviewedCount,
     required this.accuracy,
-    required this.streakDays,
-    required this.badgeLabel,
   });
 }
 
@@ -79,12 +76,10 @@ class QuizNotifier extends StateNotifier<QuizState> {
   Future<void> startSession({QuizMode? mode, List<Word>? dueWords}) async {
     final pool = dueWords ?? _allWords;
     final effectiveMode = mode ?? QuizMode.flashcard;
-    final sessionSize = effectiveMode == QuizMode.speedRound ? 10 : 8;
+    const sessionSize = 8;
 
     state = state.copyWith(
-      isGenerating:
-          effectiveMode == QuizMode.multipleChoice ||
-          effectiveMode == QuizMode.speedRound,
+      isGenerating: effectiveMode == QuizMode.multipleChoice,
       generationNotice: null,
       lastAnswerState: AnswerState.unanswered,
       showingAnswer: false,
@@ -95,10 +90,7 @@ class QuizNotifier extends StateNotifier<QuizState> {
       allWords: pool,
       mode: effectiveMode,
       sessionSize: sessionSize,
-      provider: _settings.aiProvider,
       localModelId: _settings.cactusModelId,
-      openAIKey: _settings.openAIKey,
-      geminiKey: _settings.geminiKey,
     );
 
     state = QuizState(
@@ -109,6 +101,15 @@ class QuizNotifier extends StateNotifier<QuizState> {
       isGenerating: false,
       usedAiSession: result.source == QuizSessionSource.ai,
       generationNotice: result.notice,
+    );
+
+    await LocalAnalyticsService.instance.track(
+      'review.session_started',
+      payload: {
+        'mode': effectiveMode.name,
+        'questionCount': result.session?.totalQuestions ?? 0,
+        'source': result.source.name,
+      },
     );
   }
 
@@ -169,6 +170,16 @@ class QuizNotifier extends StateNotifier<QuizState> {
       );
       await DatabaseService.instance.updateWord(updated);
     }
+
+    await LocalAnalyticsService.instance.track(
+      'review.session_completed',
+      payload: {
+        'mode': session.mode.name,
+        'score': session.score,
+        'totalQuestions': session.totalQuestions,
+        'accuracy': session.accuracy,
+      },
+    );
   }
 }
 
@@ -238,43 +249,6 @@ final reviewStatsProvider = Provider<ReviewStats>((ref) {
   final totalAttempts = totalSuccess + totalFailure;
   final accuracy = totalAttempts == 0 ? 0.0 : totalSuccess / totalAttempts;
 
-  final reviewedDays = reviewedWords
-      .map((w) => DateTime(
-            w.lastReviewedAt!.year,
-            w.lastReviewedAt!.month,
-            w.lastReviewedAt!.day,
-          ))
-      .toSet()
-      .toList()
-    ..sort((a, b) => b.compareTo(a));
-
-  int streak = 0;
-  var cursor = DateTime.now();
-  cursor = DateTime(cursor.year, cursor.month, cursor.day);
-  for (final day in reviewedDays) {
-    if (day == cursor) {
-      streak++;
-      cursor = cursor.subtract(const Duration(days: 1));
-      continue;
-    }
-    if (day == cursor.subtract(const Duration(days: 1)) && streak == 0) {
-      cursor = cursor.subtract(const Duration(days: 1));
-      streak++;
-      cursor = cursor.subtract(const Duration(days: 1));
-      continue;
-    }
-    if (day != cursor) break;
-  }
-
-  String badge = 'Explorer';
-  if (mastered.length >= 100 && streak >= 14) {
-    badge = 'Polyglot';
-  } else if (mastered.length >= 40 && streak >= 7) {
-    badge = 'Scholar';
-  } else if (mastered.length >= 15) {
-    badge = 'Apprentice';
-  }
-
   return ReviewStats(
     dueCount: due.length,
     newCount: fresh.length,
@@ -282,7 +256,5 @@ final reviewStatsProvider = Provider<ReviewStats>((ref) {
     weakCount: weak.length,
     reviewedCount: reviewedWords.length,
     accuracy: accuracy,
-    streakDays: streak,
-    badgeLabel: badge,
   );
 });
