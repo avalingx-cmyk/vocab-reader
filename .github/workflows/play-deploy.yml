@@ -107,7 +107,7 @@ jobs:
           path: build/app/outputs/bundle/release/app-release.aab
 
       - name: Deploy to closed testing
-        run: PLAY_TRACK="${PLAY_CLOSED_TRACK:-closed}" bundle exec fastlane android deploy_closed
+        run: PLAY_TRACK="${PLAY_CLOSED_TRACK:-internal}" bundle exec fastlane android deploy_closed
 
   deploy-production:
     if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'production')

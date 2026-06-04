@@ -76,7 +76,7 @@ Required GitHub secrets:
 Optional GitHub repository variables:
 
 - `PLAY_CLOSED_TRACK`
-  Use this if your closed testing track has a custom name. If not set, the workflow uses `closed`.
+  Use this if your Play Console testing track has a custom name. If not set, the workflow uses `internal`, which is the safest default for first automated uploads.
 - `PLAY_VERSION_CODE_OFFSET`
   Use this if your existing Play `versionCode` is already higher than the GitHub run number. The workflow calculates:
   `build-number = github.run_number + PLAY_VERSION_CODE_OFFSET`
