@@ -58,10 +58,6 @@ android {
     }
 }
 
-dependencies {
-    implementation(project(":llamalib"))
-}
-
 flutter {
     source = "../.."
 }
