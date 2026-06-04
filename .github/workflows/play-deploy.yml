@@ -27,6 +27,7 @@ jobs:
       PACKAGE_NAME: com.avaling.bookbeam
       PLAY_CLOSED_TRACK: ${{ vars.PLAY_CLOSED_TRACK }}
       PLAY_RELEASE_STATUS: completed
+      PLAY_VERSION_CODE_BASE: ${{ vars.PLAY_VERSION_CODE_BASE }}
       PLAY_VERSION_CODE_OFFSET: ${{ vars.PLAY_VERSION_CODE_OFFSET }}
       SUPPLY_JSON_KEY: fastlane/play-service-account.json
       AAB_PATH: build/app/outputs/bundle/release/app-release.aab
@@ -82,14 +83,14 @@ jobs:
           test -f android/app/release-keystore.jks
           test -f android/key.properties
 
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
       - name: Compute Play version code
         shell: bash
         run: |
-          offset="${PLAY_VERSION_CODE_OFFSET:-0}"
-          echo "BUILD_NUMBER=$((GITHUB_RUN_NUMBER + offset))" >> "$GITHUB_ENV"
-
-      - name: Install Flutter dependencies
-        run: flutter pub get
+          BUILD_NUMBER="$(dart run tool/compute_play_version_code.dart)"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
 
       - name: Run tests
         run: flutter test
@@ -116,6 +117,7 @@ jobs:
     env:
       PACKAGE_NAME: com.avaling.bookbeam
       PLAY_RELEASE_STATUS: completed
+      PLAY_VERSION_CODE_BASE: ${{ vars.PLAY_VERSION_CODE_BASE }}
       PLAY_VERSION_CODE_OFFSET: ${{ vars.PLAY_VERSION_CODE_OFFSET }}
       SUPPLY_JSON_KEY: fastlane/play-service-account.json
       AAB_PATH: build/app/outputs/bundle/release/app-release.aab
@@ -171,14 +173,14 @@ jobs:
           test -f android/app/release-keystore.jks
           test -f android/key.properties
 
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
       - name: Compute Play version code
         shell: bash
         run: |
-          offset="${PLAY_VERSION_CODE_OFFSET:-0}"
-          echo "BUILD_NUMBER=$((GITHUB_RUN_NUMBER + offset))" >> "$GITHUB_ENV"
-
-      - name: Install Flutter dependencies
-        run: flutter pub get
+          BUILD_NUMBER="$(dart run tool/compute_play_version_code.dart)"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
 
       - name: Run tests
         run: flutter test

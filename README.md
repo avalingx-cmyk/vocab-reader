@@ -77,9 +77,11 @@ Optional GitHub repository variables:
 
 - `PLAY_CLOSED_TRACK`
   Use this if your Play Console testing track has a custom name. If not set, the workflow uses `internal`, which is the safest default for first automated uploads.
+- `PLAY_VERSION_CODE_BASE`
+  Optional. Defaults to `1000` in CI so Play uploads start well above the local `pubspec.yaml` build number. The workflow calculates:
+  `build-number = PLAY_VERSION_CODE_BASE + github.run_number + PLAY_VERSION_CODE_OFFSET`
 - `PLAY_VERSION_CODE_OFFSET`
-  Use this if your existing Play `versionCode` is already higher than the GitHub run number. The workflow calculates:
-  `build-number = github.run_number + PLAY_VERSION_CODE_OFFSET`
+  Optional extra bump when your current Play `versionCode` is already above the computed base + run number.
 
 Required GitHub environment:
 
