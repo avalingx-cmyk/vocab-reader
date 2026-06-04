@@ -1,0 +1,37 @@
+default_platform(:android)
+
+platform :android do
+  def upload_bundle(track:, release_status:, rollout: nil)
+    options = {
+      aab: ENV.fetch("AAB_PATH"),
+      track: track,
+      release_status: release_status,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: true
+    }
+
+    options[:rollout] = rollout if rollout
+
+    upload_to_play_store(**options)
+  end
+
+  desc "Upload the release bundle to the configured closed testing track"
+  lane :deploy_closed do
+    upload_bundle(
+      track: ENV.fetch("PLAY_TRACK", "closed"),
+      release_status: ENV.fetch("PLAY_RELEASE_STATUS", "completed")
+    )
+  end
+
+  desc "Upload the release bundle to production"
+  lane :deploy_production do
+    rollout = ENV["PLAY_ROLLOUT"]
+    upload_bundle(
+      track: "production",
+      release_status: ENV.fetch("PLAY_RELEASE_STATUS", "completed"),
+      rollout: rollout.nil? || rollout.empty? ? nil : rollout.to_f
+    )
+  end
+end

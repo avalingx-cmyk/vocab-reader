@@ -49,3 +49,39 @@ BookBeam is a Flutter vocabulary app for readers. You capture unfamiliar words f
 ## Release readiness
 
 - Follow [RELEASE_CHECKLIST.md](C:/Users/selva/Desktop/Work/vocab-reader/RELEASE_CHECKLIST.md) for fresh-install QA, recovery testing, and signed Android release steps.
+
+## Play Console automation
+
+This repo now includes GitHub Actions + fastlane automation for Google Play:
+
+- Push to `develop` -> build a signed AAB and deploy to the configured closed testing track
+- Push to `main` -> build a signed AAB and wait for GitHub `production` environment approval before deploying to production
+- Manual runs are also available through `workflow_dispatch`
+
+Files:
+
+- [.github/workflows/play-deploy.yml](C:/Users/selva/Desktop/Work/vocab-reader/.github/workflows/play-deploy.yml)
+- [fastlane/Appfile](C:/Users/selva/Desktop/Work/vocab-reader/fastlane/Appfile)
+- [fastlane/Fastfile](C:/Users/selva/Desktop/Work/vocab-reader/fastlane/Fastfile)
+- [Gemfile](C:/Users/selva/Desktop/Work/vocab-reader/Gemfile)
+
+Required GitHub secrets:
+
+- `PLAY_SERVICE_ACCOUNT_JSON`
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+- `ANDROID_STORE_PASSWORD`
+
+Optional GitHub repository variables:
+
+- `PLAY_CLOSED_TRACK`
+  Use this if your closed testing track has a custom name. If not set, the workflow uses `closed`.
+- `PLAY_VERSION_CODE_OFFSET`
+  Use this if your existing Play `versionCode` is already higher than the GitHub run number. The workflow calculates:
+  `build-number = github.run_number + PLAY_VERSION_CODE_OFFSET`
+
+Required GitHub environment:
+
+- Create an environment named `production`
+- Add required reviewers if you want approval before production uploads

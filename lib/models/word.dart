@@ -1,5 +1,7 @@
 import 'user_level.dart';
 
+const _unset = Object();
+
 class Word {
   final String id;
   final String text;
@@ -84,34 +86,43 @@ class Word {
   Word copyWith({
     String? id,
     String? text,
-    String? bookId,
+    Object? bookId = _unset,
     String? bookName,
-    int? pageNumber,
-    String? context,
+    Object? pageNumber = _unset,
+    Object? context = _unset,
     UserLevel? userLevel,
-    WordSummary? summary,
+    Object? summary = _unset,
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? isPending,
-    DateTime? lastReviewedAt,
-    DateTime? nextReviewAt,
+    Object? lastReviewedAt = _unset,
+    Object? nextReviewAt = _unset,
     int? successCount,
     int? failureCount,
   }) {
     return Word(
       id: id ?? this.id,
       text: text ?? this.text,
-      bookId: bookId ?? this.bookId,
+      bookId: identical(bookId, _unset) ? this.bookId : bookId as String?,
       bookName: bookName ?? this.bookName,
-      pageNumber: pageNumber ?? this.pageNumber,
-      context: context ?? this.context,
+      pageNumber: identical(pageNumber, _unset)
+          ? this.pageNumber
+          : pageNumber as int?,
+      context:
+          identical(context, _unset) ? this.context : context as String?,
       userLevel: userLevel ?? this.userLevel,
-      summary: summary ?? this.summary,
+      summary: identical(summary, _unset)
+          ? this.summary
+          : summary as WordSummary?,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isPending: isPending ?? this.isPending,
-      lastReviewedAt: lastReviewedAt ?? this.lastReviewedAt,
-      nextReviewAt: nextReviewAt ?? this.nextReviewAt,
+      lastReviewedAt: identical(lastReviewedAt, _unset)
+          ? this.lastReviewedAt
+          : lastReviewedAt as DateTime?,
+      nextReviewAt: identical(nextReviewAt, _unset)
+          ? this.nextReviewAt
+          : nextReviewAt as DateTime?,
       successCount: successCount ?? this.successCount,
       failureCount: failureCount ?? this.failureCount,
     );

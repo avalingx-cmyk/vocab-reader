@@ -51,11 +51,16 @@ android/gradlew.bat
 /android/app/release
 
 .env
+.env.example
 .agent/
 .vscode/
 .planning/
 graphify-out/
 skills/
+*.jks
+*.keystore
+android/key.properties
+fastlane/play-service-account.json
 
 # Android-only project — ignore other platforms
 ios/
