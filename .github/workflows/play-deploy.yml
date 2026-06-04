@@ -70,11 +70,17 @@ jobs:
         shell: bash
         run: |
           cat > android/key.properties <<EOF
-          storeFile=app/release-keystore.jks
+          storeFile=release-keystore.jks
           storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}
           keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
           keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
           EOF
+
+      - name: Verify signing files
+        shell: bash
+        run: |
+          test -f android/app/release-keystore.jks
+          test -f android/key.properties
 
       - name: Compute Play version code
         shell: bash
@@ -153,11 +159,17 @@ jobs:
         shell: bash
         run: |
           cat > android/key.properties <<EOF
-          storeFile=app/release-keystore.jks
+          storeFile=release-keystore.jks
           storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}
           keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
           keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
           EOF
+
+      - name: Verify signing files
+        shell: bash
+        run: |
+          test -f android/app/release-keystore.jks
+          test -f android/key.properties
 
       - name: Compute Play version code
         shell: bash
