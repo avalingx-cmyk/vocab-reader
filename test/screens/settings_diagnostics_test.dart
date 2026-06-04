@@ -3,7 +3,6 @@ import 'package:bookbeam/providers/model_readiness_provider.dart';
 import 'package:bookbeam/providers/settings_provider.dart';
 import 'package:bookbeam/providers/theme_provider.dart';
 import 'package:bookbeam/screens/settings_screen.dart';
-import 'package:bookbeam/services/analytics_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,7 +16,7 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
 
-  testWidgets('shows recent diagnostics details in settings', (tester) async {
+  testWidgets('settings hides support and diagnostics section', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -34,22 +33,8 @@ void main() {
               ),
             ),
           ),
-          recentAnalyticsEventsProvider.overrideWith((ref) async => [
-                AnalyticsEvent(
-                  id: 'event-1',
-                  name: 'summary.generated',
-                  createdAt: DateTime(2026, 1, 1, 12),
-                  payload: const {'word': 'ephemeral'},
-                ),
-              ]),
-          recentErrorLogsProvider.overrideWith((ref) async => [
-                ErrorLogEntry(
-                  id: 'error-1',
-                  scope: 'model.download',
-                  message: 'Connection lost',
-                  createdAt: DateTime(2026, 1, 1, 13),
-                ),
-              ]),
+          recentAnalyticsEventsProvider.overrideWith((ref) async => []),
+          recentErrorLogsProvider.overrideWith((ref) async => []),
         ],
         child: const MaterialApp(home: SettingsScreen()),
       ),
@@ -57,17 +42,16 @@ void main() {
 
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
-      find.text('SUPPORT & DIAGNOSTICS'),
+      find.text('OFFLINE AI'),
       200,
       scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('SUPPORT & DIAGNOSTICS'), findsOneWidget);
-    expect(find.text('Recent activity'), findsOneWidget);
-    expect(find.text('summary.generated'), findsOneWidget);
-    expect(find.text('Recent issues'), findsOneWidget);
-    expect(find.text('Connection lost'), findsOneWidget);
+    expect(find.text('SUPPORT & DIAGNOSTICS'), findsNothing);
+    expect(find.text('Recent activity'), findsNothing);
+    expect(find.text('Recent issues'), findsNothing);
+    expect(find.text('OFFLINE AI'), findsOneWidget);
   });
 }
 

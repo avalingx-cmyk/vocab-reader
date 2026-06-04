@@ -72,27 +72,34 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           ),
 
           SafeArea(
-            child: Column(
-              children: [
-                Expanded(
-                  child: _buildLandingPage(),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: MediaQuery.of(context).size.height -
+                      MediaQuery.of(context).padding.top -
+                      MediaQuery.of(context).padding.bottom -
+                      24,
                 ),
-                
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
-                  child: Column(
-                    children: [
-                      SizedBox(
+                child: Column(
+                  children: [
+                    _buildLandingPage(),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24.0,
+                        vertical: 32.0,
+                      ),
+                      child: SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
                           onPressed: _completeOnboarding,
                           child: const Text('Get Started'),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ],
@@ -104,7 +111,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     return Padding(
       padding: const EdgeInsets.all(32.0),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
             padding: const EdgeInsets.all(24),

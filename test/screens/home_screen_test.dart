@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('WordsTab does not show the keep the momentum card',
+  testWidgets('WordsTab hides the weekly activity card',
       (tester) async {
     final words = [
       _word(
@@ -43,7 +43,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Keep the momentum!'), findsNothing);
-    expect(find.text('7-Day Activity'), findsOneWidget);
+    expect(find.text('7-Day Activity'), findsNothing);
     expect(find.text('Recent Words'), findsOneWidget);
   });
 }

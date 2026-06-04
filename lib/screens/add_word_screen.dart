@@ -104,16 +104,15 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
 
       if (mounted) {
         final messenger = ScaffoldMessenger.of(context);
-        final navigator = Navigator.of(context);
         final snackBar = buildWordSavedSnackBar(
           modelState: modelState,
           onOpenSettings: () {
-            navigator.push(
+            Navigator.of(messenger.context).push(
               MaterialPageRoute(builder: (_) => const SettingsScreen()),
             );
           },
         );
-        navigator.pop();
+        Navigator.of(context).pop();
         messenger.showSnackBar(snackBar);
       }
     } catch (e) {

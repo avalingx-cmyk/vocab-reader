@@ -575,8 +575,6 @@ class _DashboardHeader extends ConsumerWidget {
             ),
           ],
         ),
-        const SizedBox(height: 20),
-        _buildWeeklyActivityChart(context, words),
         const SizedBox(height: 32),
         Text(
           'Recent Words',
@@ -685,125 +683,6 @@ class _DashboardHeader extends ConsumerWidget {
     );
   }
 
-  Widget _buildWeeklyActivityChart(BuildContext context, List<Word> words) {
-    final today = DateTime.now();
-    final createdCounts = List<int>.filled(7, 0);
-    final reviewedCounts = List<int>.filled(7, 0);
-
-    for (final word in words) {
-      final createdDiff = today
-          .difference(DateTime(
-              word.createdAt.year, word.createdAt.month, word.createdAt.day))
-          .inDays;
-      if (createdDiff >= 0 && createdDiff < 7) {
-        createdCounts[6 - createdDiff]++;
-      }
-      if (word.lastReviewedAt != null) {
-        final reviewed = word.lastReviewedAt!;
-        final reviewedDiff = today
-            .difference(DateTime(reviewed.year, reviewed.month, reviewed.day))
-            .inDays;
-        if (reviewedDiff >= 0 && reviewedDiff < 7) {
-          reviewedCounts[6 - reviewedDiff]++;
-        }
-      }
-    }
-
-    final maxValue = [...createdCounts, ...reviewedCounts]
-        .fold<int>(1, (a, b) => a > b ? a : b);
-    const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-
-    return _DashboardSurfaceCard(
-      padding: const EdgeInsets.all(18),
-      borderRadius: 24,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '7-Day Activity',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Blue = added, Green = reviewed',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 18),
-          SizedBox(
-            height: 120,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: List.generate(7, (i) {
-                final createdFactor = createdCounts[i] / maxValue;
-                final reviewedFactor = reviewedCounts[i] / maxValue;
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.bottomCenter,
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Flexible(
-                                  child: FractionallySizedBox(
-                                    heightFactor: createdFactor == 0
-                                        ? 0.04
-                                        : createdFactor,
-                                    child: Container(
-                                      width: 10,
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.primaryBlue,
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 3),
-                                Flexible(
-                                  child: FractionallySizedBox(
-                                    heightFactor: reviewedFactor == 0
-                                        ? 0.04
-                                        : reviewedFactor,
-                                    child: Container(
-                                      width: 10,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF16A34A),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(labels[i],
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            )),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _WordCard extends StatelessWidget {

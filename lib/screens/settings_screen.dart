@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/user_level.dart';
-import '../providers/diagnostics_provider.dart';
 import '../providers/model_readiness_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/theme_provider.dart';
-import '../services/analytics_service.dart';
 import '../services/cactus_local_service.dart';
 import '../theme/app_theme.dart';
 
@@ -105,13 +103,6 @@ class _SettingsContent extends ConsumerWidget {
                 height: 1.4,
               ),
             ),
-            const SizedBox(height: 28),
-            _buildSectionHeader(context, 'SUPPORT & DIAGNOSTICS'),
-            const SizedBox(height: 12),
-            _buildCard(
-              context,
-              child: const _DiagnosticsSection(),
-            ),
             const SizedBox(height: 48),
           ],
         ),
@@ -182,126 +173,6 @@ class _SettingsContent extends ConsumerWidget {
       value: level,
       activeColor: AppTheme.primaryBlue,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-    );
-  }
-}
-
-class _DiagnosticsSection extends ConsumerWidget {
-  const _DiagnosticsSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final eventsAsync = ref.watch(recentAnalyticsEventsProvider);
-    final errorsAsync = ref.watch(recentErrorLogsProvider);
-
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Recent activity',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-          const SizedBox(height: 12),
-          eventsAsync.when(
-            data: (events) => _DiagnosticsList<AnalyticsEvent>(
-              items: events,
-              emptyText: 'No recent activity yet.',
-              titleBuilder: (event) => event.name,
-              subtitleBuilder: (event) => _formatEventSubtitle(event),
-            ),
-            loading: () => const LinearProgressIndicator(),
-            error: (_, __) => const Text('Could not load recent activity.'),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'Recent issues',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-          const SizedBox(height: 12),
-          errorsAsync.when(
-            data: (errors) => _DiagnosticsList<ErrorLogEntry>(
-              items: errors,
-              emptyText: 'No recent issues recorded.',
-              titleBuilder: (error) => error.message,
-              subtitleBuilder: (error) =>
-                  '${error.scope} · ${_formatTimestamp(error.createdAt)}',
-            ),
-            loading: () => const LinearProgressIndicator(),
-            error: (_, __) => const Text('Could not load recent issues.'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatEventSubtitle(AnalyticsEvent event) {
-    final payloadSummary = event.payload.isEmpty
-        ? 'No extra details'
-        : event.payload.entries
-            .map((entry) => '${entry.key}: ${entry.value}')
-            .join(' · ');
-    return '$payloadSummary · ${_formatTimestamp(event.createdAt)}';
-  }
-
-  String _formatTimestamp(DateTime value) {
-    final local = value.toLocal();
-    final month = local.month.toString().padLeft(2, '0');
-    final day = local.day.toString().padLeft(2, '0');
-    final hour = local.hour.toString().padLeft(2, '0');
-    final minute = local.minute.toString().padLeft(2, '0');
-    return '$month/$day $hour:$minute';
-  }
-}
-
-class _DiagnosticsList<T> extends StatelessWidget {
-  const _DiagnosticsList({
-    required this.items,
-    required this.emptyText,
-    required this.titleBuilder,
-    required this.subtitleBuilder,
-  });
-
-  final List<T> items;
-  final String emptyText;
-  final String Function(T item) titleBuilder;
-  final String Function(T item) subtitleBuilder;
-
-  @override
-  Widget build(BuildContext context) {
-    if (items.isEmpty) {
-      return Text(
-        emptyText,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      );
-    }
-
-    return Column(
-      children: items
-          .map(
-            (item) => ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                titleBuilder(item),
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(
-                subtitleBuilder(item),
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          )
-          .toList(),
     );
   }
 }
