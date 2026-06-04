@@ -61,7 +61,12 @@ class BookDetailScreen extends ConsumerWidget {
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           await Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AddWordScreen()),
+            MaterialPageRoute(
+              builder: (_) => AddWordScreen(
+                initialBookId: book.id,
+                initialBookName: book.name,
+              ),
+            ),
           );
           ref.read(wordRefreshProvider.notifier).refresh();
           ref.invalidate(bookListProvider);

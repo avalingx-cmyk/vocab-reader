@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/word.dart';
 import '../services/database_service.dart';
+import 'word_provider.dart';
 
 /// Provider that fetches all unique book names from the database
 final bookListProvider = FutureProvider<List<BookInfo>>((ref) async {
+  ref.watch(wordRefreshProvider);
   final books = await DatabaseService.instance.getBooks();
   final words = await DatabaseService.instance.getWords();
   final pendingByBook = <String, int>{};

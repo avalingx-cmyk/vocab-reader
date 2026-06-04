@@ -56,7 +56,8 @@ class _EditWordScreenState extends ConsumerState<EditWordScreen> {
       final newContext = _contextController.text.trim().isNotEmpty ? _contextController.text.trim() : null;
 
       final textChanged = newText != widget.word.text;
-      final shouldRegenerate = textChanged;
+      final contextChanged = newContext != widget.word.context;
+      final shouldRegenerate = textChanged || contextChanged;
       final book = newBookName == widget.word.bookName && widget.word.bookId != null
           ? null
           : await DatabaseService.instance.upsertBook(newBookName);
@@ -67,13 +68,18 @@ class _EditWordScreenState extends ConsumerState<EditWordScreen> {
         bookName: newBookName,
         pageNumber: newPageNumber,
         context: newContext,
+        summary: shouldRegenerate ? null : widget.word.summary,
         isPending: shouldRegenerate ? true : widget.word.isPending,
+        lastReviewedAt: shouldRegenerate ? null : widget.word.lastReviewedAt,
+        nextReviewAt: shouldRegenerate ? null : widget.word.nextReviewAt,
+        successCount: shouldRegenerate ? 0 : widget.word.successCount,
+        failureCount: shouldRegenerate ? 0 : widget.word.failureCount,
         updatedAt: DateTime.now(),
       );
 
       await DatabaseService.instance.updateWord(updatedWord);
 
-      if (shouldRegenerate && !widget.word.isPending) {
+      if (shouldRegenerate) {
         await DatabaseService.instance.addToQueue(widget.word.id);
       }
 
@@ -82,7 +88,7 @@ class _EditWordScreenState extends ConsumerState<EditWordScreen> {
         ref.invalidate(bookListProvider);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(shouldRegenerate ? 'Word updated and queued for AI analysis.' : 'Changes saved.'),
+            content: Text(shouldRegenerate ? 'Word updated and queued for a fresh AI explanation.' : 'Changes saved.'),
             backgroundColor: AppTheme.primaryBlue,
           ),
         );

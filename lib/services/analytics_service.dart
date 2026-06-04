@@ -18,6 +18,24 @@ class AnalyticsEvent {
   });
 }
 
+class ErrorLogEntry {
+  final String id;
+  final String scope;
+  final String message;
+  final DateTime createdAt;
+  final String? details;
+  final String? stackTrace;
+
+  const ErrorLogEntry({
+    required this.id,
+    required this.scope,
+    required this.message,
+    required this.createdAt,
+    this.details,
+    this.stackTrace,
+  });
+}
+
 abstract class AnalyticsService {
   Future<void> track(
     String name, {
@@ -32,6 +50,8 @@ abstract class AnalyticsService {
   });
 
   Future<List<AnalyticsEvent>> recentEvents({int limit = 100});
+
+  Future<List<ErrorLogEntry>> recentErrors({int limit = 50});
 }
 
 class LocalAnalyticsService implements AnalyticsService {
@@ -87,6 +107,23 @@ class LocalAnalyticsService implements AnalyticsService {
                 : Map<String, dynamic>.from(
                     jsonDecode(row['payload_json'] as String) as Map,
                   ),
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<List<ErrorLogEntry>> recentErrors({int limit = 50}) async {
+    final rows = await DatabaseService.instance.getErrorLogs(limit: limit);
+    return rows
+        .map(
+          (row) => ErrorLogEntry(
+            id: row['id'] as String,
+            scope: row['scope'] as String,
+            message: row['message'] as String,
+            createdAt: DateTime.parse(row['created_at'] as String),
+            details: row['details'] as String?,
+            stackTrace: row['stack_trace'] as String?,
           ),
         )
         .toList();

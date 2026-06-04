@@ -9,10 +9,18 @@ import '../providers/settings_provider.dart';
 import '../services/analytics_service.dart';
 import '../services/database_service.dart';
 import '../services/sync_service.dart';
+import 'settings_screen.dart';
 import '../theme/app_theme.dart';
 
 class AddWordScreen extends ConsumerStatefulWidget {
-  const AddWordScreen({super.key});
+  const AddWordScreen({
+    super.key,
+    this.initialBookId,
+    this.initialBookName,
+  });
+
+  final String? initialBookId;
+  final String? initialBookName;
 
   @override
   ConsumerState<AddWordScreen> createState() => _AddWordScreenState();
@@ -29,6 +37,16 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
   bool _isNewBook = false;
   String? _selectedBookId;
   String? _selectedBook;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedBookId = widget.initialBookId;
+    _selectedBook = widget.initialBookName;
+    if (widget.initialBookName != null) {
+      _bookController.text = widget.initialBookName!;
+    }
+  }
 
   @override
   void dispose() {
@@ -85,21 +103,18 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
       }
 
       if (mounted) {
-        final message = switch (modelState.status) {
-          ModelReadinessStatus.ready =>
-            'Word saved. BookBeam is creating the explanation now.',
-          ModelReadinessStatus.unsupported =>
-            'Word saved. Local AI works on Android in this build, so the explanation will stay pending here.',
-          _ =>
-            'Word saved. Download the offline AI in Settings to create the explanation.',
-        };
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: AppTheme.primaryBlue,
-          ),
+        final messenger = ScaffoldMessenger.of(context);
+        final navigator = Navigator.of(context);
+        final snackBar = buildWordSavedSnackBar(
+          modelState: modelState,
+          onOpenSettings: () {
+            navigator.push(
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            );
+          },
         );
-        Navigator.of(context).pop();
+        navigator.pop();
+        messenger.showSnackBar(snackBar);
       }
     } catch (e) {
       await LocalAnalyticsService.instance.recordError(
@@ -289,6 +304,32 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
       ),
     );
   }
+}
+
+SnackBar buildWordSavedSnackBar({
+  required ModelReadinessState modelState,
+  required VoidCallback onOpenSettings,
+}) {
+  final message = switch (modelState.status) {
+    ModelReadinessStatus.ready =>
+      'Word saved. BookBeam is creating the explanation now.',
+    ModelReadinessStatus.unsupported =>
+      'Word saved. Offline AI summaries work on Android in this build. Open Settings for details.',
+    _ =>
+      'Word saved. Download or repair the offline AI in Settings to create the explanation.',
+  };
+
+  return SnackBar(
+    content: Text(message),
+    backgroundColor: AppTheme.primaryBlue,
+    action: modelState.status == ModelReadinessStatus.ready
+        ? null
+        : SnackBarAction(
+            label: 'Open Settings',
+            textColor: Colors.white,
+            onPressed: onOpenSettings,
+          ),
+  );
 }
 
 
