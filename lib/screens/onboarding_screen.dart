@@ -27,7 +27,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       'onboarding.completed',
       payload: {'learnerLevel': _selectedLevel.name},
     );
-    
+
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeScreen()),
@@ -56,7 +56,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               ),
             ),
           ),
-          
+
           // Floating Shapes for Premium Feel
           Positioned(
             top: -100,
@@ -157,12 +157,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               }
             },
             child: Column(
-              children: UserLevel.values.map(
-                (level) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _buildLevelCard(level),
-                ),
-              ).toList(),
+              children: UserLevel.values
+                  .map(
+                    (level) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _buildLevelCard(level),
+                    ),
+                  )
+                  .toList(),
             ),
           ),
         ],
@@ -177,22 +179,26 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: selected ? AppTheme.primaryBlue : Theme.of(context).dividerColor,
+          color:
+              selected ? AppTheme.primaryBlue : Theme.of(context).dividerColor,
           width: selected ? 2 : 1,
         ),
       ),
-      child: RadioListTile<UserLevel>(
-        value: level,
-        activeColor: AppTheme.primaryBlue,
-        title: Text(
-          level.displayName,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(
-          level.description,
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontSize: 12,
+      child: Material(
+        color: Colors.transparent,
+        child: RadioListTile<UserLevel>(
+          value: level,
+          activeColor: AppTheme.primaryBlue,
+          title: Text(
+            level.displayName,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            level.description,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
           ),
         ),
       ),
