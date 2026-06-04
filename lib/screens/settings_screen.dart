@@ -144,7 +144,13 @@ class _SettingsContent extends ConsumerWidget {
           ),
         ],
       ),
-      child: child,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Material(
+          color: Theme.of(context).colorScheme.surface,
+          child: child,
+        ),
+      ),
     );
   }
 
