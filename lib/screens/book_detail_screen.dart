@@ -6,6 +6,7 @@ import '../providers/word_provider.dart';
 import '../theme/app_theme.dart';
 import 'word_detail_screen.dart';
 import 'add_word_screen.dart';
+import 'home_screen.dart';
 
 class BookDetailScreen extends ConsumerWidget {
   final BookInfo book;
@@ -60,7 +61,7 @@ class BookDetailScreen extends ConsumerWidget {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          await Navigator.of(context).push(
+          final notice = await Navigator.of(context).push<WordSavedNotice>(
             MaterialPageRoute(
               builder: (_) => AddWordScreen(
                 initialBookId: book.id,
@@ -70,6 +71,9 @@ class BookDetailScreen extends ConsumerWidget {
           );
           ref.read(wordRefreshProvider.notifier).refresh();
           ref.invalidate(bookListProvider);
+          if (context.mounted && notice != null) {
+            showWordSavedNotice(context, notice);
+          }
         },
         backgroundColor: AppTheme.primaryBlue,
         child: const Icon(Icons.add_rounded, color: Colors.white),
@@ -90,18 +94,24 @@ class _WordTile extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         title: Text(
           word.text,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppTheme.primaryBlue),
+          style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+              color: AppTheme.primaryBlue),
         ),
         subtitle: word.summary != null
             ? Text(
                 word.summary!.definition,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
               )
-            : const Text('Analyzing...', style: TextStyle(fontStyle: FontStyle.italic)),
+            : const Text('Analyzing...',
+                style: TextStyle(fontStyle: FontStyle.italic)),
         trailing: word.isPending
-            ? const Icon(Icons.sync_rounded, size: 18, color: AppTheme.accentAmber)
+            ? const Icon(Icons.sync_rounded,
+                size: 18, color: AppTheme.accentAmber)
             : const Icon(Icons.chevron_right_rounded),
         onTap: () {
           Navigator.of(context).push(

@@ -3,6 +3,11 @@ import 'package:bookbeam/models/word.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('maps legacy saved user levels into the new three-level model', () {
+    expect(UserLevel.fromString('upperIntermediate'), UserLevel.intermediate);
+    expect(UserLevel.fromString('advanced'), UserLevel.pro);
+  });
+
   test('copyWith can clear nullable word fields explicitly', () {
     final word = Word(
       id: 'word-1',

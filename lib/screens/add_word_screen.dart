@@ -9,7 +9,6 @@ import '../providers/settings_provider.dart';
 import '../services/analytics_service.dart';
 import '../services/database_service.dart';
 import '../services/sync_service.dart';
-import 'settings_screen.dart';
 import '../theme/app_theme.dart';
 
 class AddWordScreen extends ConsumerStatefulWidget {
@@ -24,6 +23,35 @@ class AddWordScreen extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<AddWordScreen> createState() => _AddWordScreenState();
+}
+
+class WordSavedNotice {
+  const WordSavedNotice({
+    required this.message,
+    required this.opensSettings,
+  });
+
+  final String message;
+  final bool opensSettings;
+
+  static WordSavedNotice fromModelState(ModelReadinessState modelState) {
+    return switch (modelState.status) {
+      ModelReadinessStatus.ready => const WordSavedNotice(
+          message: 'Word saved. BookBeam is creating the explanation now.',
+          opensSettings: false,
+        ),
+      ModelReadinessStatus.unsupported => const WordSavedNotice(
+          message:
+              'Word saved. Offline AI summaries work on Android in this build. Open Settings for details.',
+          opensSettings: true,
+        ),
+      _ => const WordSavedNotice(
+          message:
+              'Word saved. Download or repair the offline AI in Settings to create the explanation.',
+          opensSettings: true,
+        ),
+    };
+  }
 }
 
 class _AddWordScreenState extends ConsumerState<AddWordScreen> {
@@ -94,7 +122,7 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
           'learnerLevel': word.userLevel.name,
         },
       );
-      
+
       ref.read(wordRefreshProvider.notifier).refresh();
       ref.invalidate(bookListProvider);
 
@@ -103,17 +131,9 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
       }
 
       if (mounted) {
-        final messenger = ScaffoldMessenger.of(context);
-        final snackBar = buildWordSavedSnackBar(
-          modelState: modelState,
-          onOpenSettings: () {
-            Navigator.of(messenger.context).push(
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            );
-          },
-        );
-        Navigator.of(context).pop();
-        messenger.showSnackBar(snackBar);
+        Navigator.of(
+          context,
+        ).pop<WordSavedNotice>(WordSavedNotice.fromModelState(modelState));
       }
     } catch (e) {
       await LocalAnalyticsService.instance.recordError(
@@ -121,9 +141,8 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
         error: e,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent)
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Error: $e'), backgroundColor: Colors.redAccent));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -152,7 +171,9 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
                 label: 'The word',
                 hint: 'e.g. Ephemeral',
                 icon: Icons.text_fields_rounded,
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Please enter a word' : null,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Please enter a word'
+                    : null,
               ),
               const SizedBox(height: 20),
               Consumer(
@@ -166,11 +187,14 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
                           label: 'Source book',
                           hint: 'e.g. Meditations',
                           icon: Icons.auto_stories_rounded,
-                          validator: (v) => (v == null || v.trim().isEmpty) ? 'Please enter the book name' : null,
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? 'Please enter the book name'
+                              : null,
                           suffixIcon: books.isNotEmpty
                               ? IconButton(
                                   icon: const Icon(Icons.list_rounded),
-                                  onPressed: () => setState(() => _isNewBook = false),
+                                  onPressed: () =>
+                                      setState(() => _isNewBook = false),
                                 )
                               : null,
                         );
@@ -202,7 +226,9 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
                       label: 'Source book',
                       hint: 'e.g. Meditations',
                       icon: Icons.auto_stories_rounded,
-                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Please enter the book name' : null,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Please enter the book name'
+                          : null,
                     ),
                   );
                 },
@@ -235,7 +261,8 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
                     ? const SizedBox(
                         width: 24,
                         height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       )
                     : const Text('Add to My Library'),
               ),
@@ -296,9 +323,12 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
             borderRadius: BorderRadius.circular(20),
             borderSide: BorderSide.none,
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          labelStyle: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-          floatingLabelStyle: const TextStyle(color: AppTheme.primaryBlue, fontWeight: FontWeight.bold),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          labelStyle:
+              TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+          floatingLabelStyle: const TextStyle(
+              color: AppTheme.primaryBlue, fontWeight: FontWeight.bold),
         ),
       ),
     );
@@ -306,31 +336,22 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
 }
 
 SnackBar buildWordSavedSnackBar({
-  required ModelReadinessState modelState,
+  required WordSavedNotice notice,
   required VoidCallback onOpenSettings,
 }) {
-  final message = switch (modelState.status) {
-    ModelReadinessStatus.ready =>
-      'Word saved. BookBeam is creating the explanation now.',
-    ModelReadinessStatus.unsupported =>
-      'Word saved. Offline AI summaries work on Android in this build. Open Settings for details.',
-    _ =>
-      'Word saved. Download or repair the offline AI in Settings to create the explanation.',
-  };
-
   return SnackBar(
-    content: Text(message),
+    duration: const Duration(seconds: 6),
+    content: Text(notice.message),
     backgroundColor: AppTheme.primaryBlue,
-    action: modelState.status == ModelReadinessStatus.ready
-        ? null
-        : SnackBarAction(
+    action: notice.opensSettings
+        ? SnackBarAction(
             label: 'Open Settings',
             textColor: Colors.white,
             onPressed: onOpenSettings,
-          ),
+          )
+        : null,
   );
 }
-
 
 // ── Premium book picker bottom sheet ─────────────────────────────────────────
 class _BookPickerField extends StatelessWidget {
@@ -365,21 +386,24 @@ class _BookPickerField extends StatelessWidget {
                     : null,
                 boxShadow: [
                   BoxShadow(
-                    color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
+                    color:
+                        Theme.of(context).shadowColor.withValues(alpha: 0.05),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
                 ],
               ),
               child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                 leading: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: AppTheme.primaryBlue.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.auto_stories_rounded, color: AppTheme.primaryBlue, size: 20),
+                  child: const Icon(Icons.auto_stories_rounded,
+                      color: AppTheme.primaryBlue, size: 20),
                 ),
                 title: Text(
                   hasSelection ? selectedBook! : 'Select book',
@@ -387,7 +411,8 @@ class _BookPickerField extends StatelessWidget {
                     color: hasSelection
                         ? Theme.of(context).colorScheme.onSurface
                         : Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontWeight: hasSelection ? FontWeight.w600 : FontWeight.normal,
+                    fontWeight:
+                        hasSelection ? FontWeight.w600 : FontWeight.normal,
                   ),
                 ),
                 trailing: const Icon(
@@ -460,7 +485,10 @@ class _BookPickerSheet extends StatelessWidget {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSurfaceVariant
+                  .withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -470,7 +498,10 @@ class _BookPickerSheet extends StatelessWidget {
               children: [
                 Text(
                   'Select a Book',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const Spacer(),
                 IconButton(
@@ -482,7 +513,8 @@ class _BookPickerSheet extends StatelessWidget {
           ),
           const Divider(height: 1),
           ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.45),
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.45),
             child: ListView.separated(
               shrinkWrap: true,
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -494,7 +526,8 @@ class _BookPickerSheet extends StatelessWidget {
                 return InkWell(
                   onTap: () => onSelected(book.id),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 10),
                     child: Row(
                       children: [
                         Container(
@@ -503,12 +536,18 @@ class _BookPickerSheet extends StatelessWidget {
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? AppTheme.primaryBlue.withValues(alpha: 0.15)
-                                : Theme.of(context).colorScheme.surfaceContainerHighest,
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Icon(
                             Icons.menu_book_rounded,
-                            color: isSelected ? AppTheme.primaryBlue : Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: isSelected
+                                ? AppTheme.primaryBlue
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
                             size: 22,
                           ),
                         ),
@@ -522,7 +561,9 @@ class _BookPickerSheet extends StatelessWidget {
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 16,
-                                  color: isSelected ? AppTheme.primaryBlue : Theme.of(context).colorScheme.onSurface,
+                                  color: isSelected
+                                      ? AppTheme.primaryBlue
+                                      : Theme.of(context).colorScheme.onSurface,
                                 ),
                               ),
                               const SizedBox(height: 2),
@@ -530,7 +571,9 @@ class _BookPickerSheet extends StatelessWidget {
                                 '${book.wordCount} ${book.wordCount == 1 ? 'word' : 'words'}',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                                 ),
                               ),
                             ],
@@ -543,7 +586,8 @@ class _BookPickerSheet extends StatelessWidget {
                               color: AppTheme.primaryBlue,
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.check_rounded, color: Colors.white, size: 14),
+                            child: const Icon(Icons.check_rounded,
+                                color: Colors.white, size: 14),
                           ),
                       ],
                     ),
@@ -566,7 +610,8 @@ class _BookPickerSheet extends StatelessWidget {
                       color: AppTheme.primaryBlue.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: const Icon(Icons.add_rounded, color: AppTheme.primaryBlue, size: 22),
+                    child: const Icon(Icons.add_rounded,
+                        color: AppTheme.primaryBlue, size: 22),
                   ),
                   const SizedBox(width: 16),
                   const Text(

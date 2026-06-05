@@ -17,6 +17,25 @@ import '../theme/app_theme.dart';
 final navIndexProvider = StateProvider<int>((ref) => 0);
 final _debounceTimerProvider = StateProvider<Timer?>((ref) => null);
 
+void showWordSavedNotice(BuildContext context, WordSavedNotice notice) {
+  final messenger = ScaffoldMessenger.of(context);
+  late ScaffoldFeatureController<SnackBar, SnackBarClosedReason> controller;
+
+  controller = messenger.showSnackBar(
+    buildWordSavedSnackBar(
+      notice: notice,
+      onOpenSettings: () async {
+        controller.close();
+        await controller.closed;
+        if (!context.mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const SettingsScreen()),
+        );
+      },
+    ),
+  );
+}
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -48,7 +67,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           String msg;
           switch (reason) {
             case SyncError.notConfigured:
-              msg = 'Pick a local model in Settings before generating summaries.';
+              msg =
+                  'Pick a local model in Settings before generating summaries.';
               break;
             case SyncError.localModelMissing:
               msg = errMsg ??
@@ -112,6 +132,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.read(wordSearchProvider.notifier).state = '';
     setState(() => _isSearchExpanded = false);
     _searchFocusNode.unfocus();
+  }
+
+  Future<void> _openAddWordScreen() async {
+    final notice = await Navigator.of(context).push<WordSavedNotice>(
+      MaterialPageRoute(builder: (_) => const AddWordScreen()),
+    );
+
+    if (!mounted) return;
+
+    ref.read(wordRefreshProvider.notifier).refresh();
+    _trySync();
+
+    if (notice != null) {
+      showWordSavedNotice(context, notice);
+    }
   }
 
   @override
@@ -223,13 +258,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       floatingActionButton: currentIndex == 0
           ? FloatingActionButton.extended(
               onPressed: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const AddWordScreen()),
-                );
-                if (mounted) {
-                  ref.read(wordRefreshProvider.notifier).refresh();
-                  _trySync();
-                }
+                await _openAddWordScreen();
               },
               icon: const Icon(Icons.add_rounded),
               label: const Text('New Word'),
@@ -434,9 +463,15 @@ class WordsTab extends ConsumerWidget {
               alignment: WrapAlignment.center,
               children: [
                 ElevatedButton.icon(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const AddWordScreen()),
-                  ),
+                  onPressed: () async {
+                    final notice =
+                        await Navigator.of(context).push<WordSavedNotice>(
+                      MaterialPageRoute(builder: (_) => const AddWordScreen()),
+                    );
+                    if (context.mounted && notice != null) {
+                      showWordSavedNotice(context, notice);
+                    }
+                  },
                   icon: const Icon(Icons.add_rounded, size: 18),
                   label: const Text('Add Your First Word'),
                   style: ElevatedButton.styleFrom(
@@ -499,10 +534,8 @@ class _DashboardHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final int wordsCount = words.length;
-    final int booksCount = words
-        .map((w) => w.bookId ?? w.bookName.toLowerCase())
-        .toSet()
-        .length;
+    final int booksCount =
+        words.map((w) => w.bookId ?? w.bookName.toLowerCase()).toSet().length;
     final int dueToday = words
         .where((w) =>
             w.summary != null &&
@@ -682,7 +715,6 @@ class _DashboardHeader extends ConsumerWidget {
       ),
     );
   }
-
 }
 
 class _WordCard extends StatelessWidget {
@@ -823,9 +855,10 @@ class _RecoveryBanner extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final showModelCard = readiness.status == ModelReadinessStatus.notDownloaded ||
-        readiness.status == ModelReadinessStatus.repairNeeded ||
-        readiness.status == ModelReadinessStatus.unsupported;
+    final showModelCard =
+        readiness.status == ModelReadinessStatus.notDownloaded ||
+            readiness.status == ModelReadinessStatus.repairNeeded ||
+            readiness.status == ModelReadinessStatus.unsupported;
     final showRetryCard = failedSummaryCount > 0;
 
     if (!showModelCard && !showRetryCard) {
@@ -855,7 +888,8 @@ class _RecoveryBanner extends ConsumerWidget {
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('BookBeam is retrying your saved explanations.'),
+                    content:
+                        Text('BookBeam is retrying your saved explanations.'),
                   ),
                 );
               }
